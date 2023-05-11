@@ -1,0 +1,244 @@
+---
+title: "researchnote"
+format: html
+editor: visual
+---
+
+```{r setup,include = FALSE,echo=FALSE}
+set.seed(0506)
+options (warn = -1)
+setwd("/Users/zhumeng/Desktop/Spring semester_2023/leadership/code")
+# packbirth loading
+library(pacman)
+p_load("rio",
+       "here",
+       "tidyverse",
+       "countrycode",
+       "car",
+       "haven",
+       "modelsummary")
+```
+
+# dataLoda
+
+## IV
+### iv_leadership
+```{r dataloda}
+#arc_raw <- read_dta("../data/Archigos_4.1.dta") %>%
+#  mutate(country = str_sub(obsid,1,3),
+#         year = str_sub(obsid,5,8)) %>%
+#   filter(.,year %in% c(1945:2015))
+#write.csv(arc_raw,file = "../data/arc_raw.csv",row.names = FALSE)
+
+arc <- read.csv("../data/arc.csv") %>%
+  select(.,ccode,year,leadid,leader,gender,yrborn,yrdied,startdate,enddate,entry,exit,exitcode) %>%
+  filter(.,year >= 1946)
+arc$year <- as.factor(arc$year)
+
+#write.csv(arc,file = "../data/arc.csv",row.names = FALSE)
+```
+
+### iv_ideologues
+```{r}
+ide <- read.csv("../data/Global_Leader_Ideologies_22_10_28/global_leader_ideologies.csv") %>%
+  rename(countryname = country_name,
+         ccode = country_code_cow) %>%
+  select(.,countryname,ccode,year,leader,leader_position,leader_ideology,leader_ideology_num_redux,leader_party_eng,leader_party_abbr,region) %>%
+  filter(.,year >= 1946)
+ide$year <- as.factor(ide$year)
+
+arc_ide <- arc %>%
+  left_join(.,ide,by = c("ccode","year","leader")) %>%
+  select(.,-c(countryname))
+arc_ide$countryname <- countrycode(arc_ide$ccode,
+                                   origin = "cown",
+                                   destination = "country.name",
+                                   custom_match = c(
+                                     "260"= "Germany",
+                                     "340" = "The Republic of Honduras",
+                                     "711" = "Tibet"))
+arc_ide$countrycode <- countrycode(arc_ide$ccode,
+                                   origin = "cown",
+                                   destination = "iso3c",
+                                   custom_match = c(
+                                     "260"= "GFR",
+                                     "265" = "GDR",
+                                     "315" = "CZE",
+                                     "340" = "SER",
+                                     "345" = "YUG",
+                                     "347" = "KOS",
+                                     "511" = "ZAN",
+                                     "678" = "YAR",
+                                     "680" = "YPR",
+                                     "817" = "RVN",
+                                     "711" = "TBT"))
+```
+
+## OV
+```{r}
+vdem <- readRDS("../data/Vdem/VDem_12_full.rds") %>%
+  select(.,COWcode,year,v2x_polyarchy,v2x_liberal,v2exl_legitideol,v2exl_legitlead,v2exl_legitperf,v2exl_legitratio,v2cagenmob,v2cademmob,v2caautmob,v2smpolsoc,v2cacamps,v2x_civlib,v2svstterr,v2stfisccap,e_regionpol) %>%
+  rename(ccode = COWcode,
+         dem_electoral = v2x_polyarchy,
+         dem_liberal = v2x_liberal,
+         leg_ideol = v2exl_legitideol,
+         leg_leader = v2exl_legitlead,
+         leg_perfermance = v2exl_legitperf,
+         leg_legal = v2exl_legitratio,
+         mob_mass = v2cagenmob,
+         mob_demo = v2cademmob,
+         mob_auto = v2caautmob,
+         pol_society = v2smpolsoc,
+         pol_political = v2cacamps,
+         lib_civil = v2x_civlib,
+         cap_territory = v2svstterr,
+         cap_fiscal = v2stfisccap,
+         regionpol = e_regionpol) %>%
+  filter(.,year >= 1946)
+vdem$year <- as.factor(vdem$year)
+
+```
+
+## IV and OV
+```{r}
+maindata <- arc %>%
+  left_join(.,ide,by = c("ccode","year","leader")) %>%
+  left_join(.,vdem,by = c("ccode","year")) %>%
+  select(.,-c(countryname))
+
+```
+
+## CV
+
+### cvLoda
+```{r loda_cv}
+# GDP data
+## pwt gdpp
+pwt <- read_dta("../data/pwt1001.dta") %>%
+  select(.,countrycode,year,rgdpna,pop) %>%
+  mutate(rgdppna = rgdpna/pop)
+pwt$year <- as.factor(pwt$year)
+## world bank
+gdppg <- read.csv("../data/gdp_growth.csv",check.names=FALSE)  %>%
+  reshape2::melt(.,
+                 id.vars=c("countrycode","Country Name"),
+                 variable.name = "year",
+                 value.name = "gdppg" 
+                 ) %>%
+  select(.,countrycode,year,gdppg)
+
+gdpp <- read.csv("../data/gdp (constant 2015 US$).csv",check.names=FALSE) %>%
+  reshape2::melt(.,
+                 id.vars=c("countrycode","Country Name"),
+                 variable.name = "year",
+                 value.name = "gdpp" 
+                 ) 
+
+## inequality
+load("../data/swiid9_4.rda")
+swiid_summary$iso3c <- countrycode(swiid_summary$country, 
+                                   origin = 'country.name',
+                                   destination = 'iso3c',
+                                   custom_match = c(
+                                    "Czechoslovakia" = "CSK",
+                                    "Kosovo" = "SRB",
+                                    "Micronesia" = "FSM",
+                                    "Yugoslavia" = "YUG"
+                                   )) 
+
+swiid_summary <- swiid_summary %>%
+  select(.,iso3c,country,year,gini_disp) %>%
+  rename(gini_tax = gini_disp,
+         countrycode = iso3c,
+         countryname = country)
+swiid_summary$year <- as.factor(swiid_summary$year)
+## 
+mys <- read.csv('../data/mys.csv') %>% 
+  reshape2::melt(id = c("country","iso3")) %>%
+  mutate(variable = str_sub(variable,-4,-1),
+         variable = as.numeric(variable)) %>% 
+  rename(countrycode = iso3,
+         year = variable,
+         Educ_yrs = value)
+
+## DPI data for policy
+prsd <- haven::read_dta("../data/DPI2020/DPI2020.dta")
+# Parliamentary (2), Assembly-elected President (1), Presidential (0)
+prsd <- prsd %>% 
+  select(.,ifs,year,system,yrsoffc,finittrm,yrcurnt,execrlc,execnat,polariz,termlimit) %>% 
+  rename(parliamentary = system,
+         countrycode = ifs) 
+prsd$year <- as.factor(prsd$year)
+```
+
+## dataCombine
+```{r timeTo2014}
+
+## inflation
+inflation <- readRDS("../data/inflation.rds") %>%
+  select(.,iso3c,year,FP.CPI.TOTL.ZG) %>%
+  rename(inflation = FP.CPI.TOTL.ZG,
+         countrycode = iso3c)
+inflation$year <- as.factor(inflation$year)
+
+fulldata <- arc_ide %>%
+  left_join(.,pwt,by = c("countrycode","year")) %>%
+  left_join(.,gdppg,by = c("countrycode","year")) %>%
+  left_join(.,prsd,by = c("countrycode","year")) %>%
+  left_join(.,inflation,by = c("countrycode","year")) %>%
+  left_join(.,swiid_summary,by = c("countrycode","year","countryname")) %>%
+  select(ccode,countrycode,countryname,year,leader,gender,yrborn,yrdied,startdate,enddate,leader_position,leader_ideology,leader_ideology_num_redux,leader_party_eng,leader_party_abbr,entry,exit,exitcode,parliamentary,yrsoffc,finittrm,yrcurnt,execrlc,execnat,polariz,termlimit,rgdpna,pop,rgdppna,gdppg,inflation,gini_tax,region) 
+
+#write.csv(fulldata,file = "../data/fulldata.csv",row.names = FALSE)
+
+```
+
+
+
+
+
+## time to 2020
+```{r}
+ide_arc <- ide %>%
+  left_join(.,arc)
+ide_arc$countrycode <- countrycode(ide_arc$ccode,
+                                   origin = "cown",
+                                   destination = "iso3c",
+                                   custom_match = c(
+                                     "260"= "GFR",
+                                     "265" = "GDR",
+                                     "315" = "CZE",
+                                     "340" = "SER",
+                                     "345" = "YUG",
+                                     "347" = "KOS",
+                                     "511" = "ZAN",
+                                     "678" = "YAR",
+                                     "680" = "YPR",
+                                     "817" = "RVN",
+                                     "711" = "TBT"))
+ide_arc$countryname <- countrycode(ide_arc$ccode,
+                                   origin = "cown",
+                                   destination = "country.name",
+                                   custom_match = c(
+                                     "260"= "Germany",
+                                     "340" = "The Republic of Honduras",
+                                     "711" = "Tibet"))
+inflation <- readRDS("../data/inflation.rds") %>%
+  select(.,iso3c,year,FP.CPI.TOTL.ZG,country) %>%
+  rename(inflation = FP.CPI.TOTL.ZG,
+         countrycode = iso3c,
+         countryname = country)
+inflation$year <- as.factor(inflation$year)
+
+
+ide_arc2020 <- ide_arc %>%
+  left_join(.,pwt,by = c("countrycode","year")) %>%
+  left_join(.,gdppg,by = c("countrycode","year")) %>%
+  left_join(.,prsd,by = c("countrycode","year")) %>%
+  left_join(.,inflation,by = c("countrycode","year","countryname")) %>%
+  left_join(.,swiid_summary,by = c("countrycode","year","countryname")) %>%
+  select(ccode,countrycode,countryname,year,leader,gender,yrborn,yrdied,startdate,enddate,leader_position,leader_ideology,leader_ideology_num_redux,leader_party_eng,leader_party_abbr,entry,exit,exitcode,parliamentary,yrsoffc,finittrm,yrcurnt,execrlc,execnat,polariz,termlimit,rgdpna,pop,rgdppna,gdppg,inflation,gini_tax,region) 
+
+
+#write.csv(ide_arc2020,file = "../data/fulldata2020.csv",row.names = FALSE)
+```
