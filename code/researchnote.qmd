@@ -29,10 +29,11 @@ p_load("rio",
 #         year = str_sub(obsid,5,8)) %>%
 #   filter(.,year %in% c(1945:2015))
 #write.csv(arc_raw,file = "../data/arc_raw.csv",row.names = FALSE)
-
+#real_year <- unique(arc$year)
 arc <- read.csv("../data/arc.csv") %>%
   select(.,ccode,year,leadid,leader,gender,yrborn,yrdied,startdate,enddate,entry,exit,exitcode) %>%
-  filter(.,year >= 1946)
+  mutate(age = yrdied - yrborn) %>%
+  filter(.,year >= 1945)
 arc$year <- as.factor(arc$year)
 
 #write.csv(arc,file = "../data/arc.csv",row.names = FALSE)
@@ -43,42 +44,20 @@ arc$year <- as.factor(arc$year)
 ide <- read.csv("../data/Global_Leader_Ideologies_22_10_28/global_leader_ideologies.csv") %>%
   rename(countryname = country_name,
          ccode = country_code_cow) %>%
-  select(.,countryname,ccode,year,leader,leader_position,leader_ideology,leader_ideology_num_redux,leader_party_eng,leader_party_abbr,region) %>%
-  filter(.,year >= 1946)
+  select(.,ccode,year,leader,leader_position,leader_ideology,leader_ideology_num_redux,leader_party_eng,leader_party_abbr,region) %>%
+  filter(.,year >= 1945) %>%
+  complete(.,ccode,year)
 ide$year <- as.factor(ide$year)
 
-arc_ide <- arc %>%
-  left_join(.,ide,by = c("ccode","year","leader")) %>%
-  select(.,-c(countryname))
-arc_ide$countryname <- countrycode(arc_ide$ccode,
-                                   origin = "cown",
-                                   destination = "country.name",
-                                   custom_match = c(
-                                     "260"= "Germany",
-                                     "340" = "The Republic of Honduras",
-                                     "711" = "Tibet"))
-arc_ide$countrycode <- countrycode(arc_ide$ccode,
-                                   origin = "cown",
-                                   destination = "iso3c",
-                                   custom_match = c(
-                                     "260"= "GFR",
-                                     "265" = "GDR",
-                                     "315" = "CZE",
-                                     "340" = "SER",
-                                     "345" = "YUG",
-                                     "347" = "KOS",
-                                     "511" = "ZAN",
-                                     "678" = "YAR",
-                                     "680" = "YPR",
-                                     "817" = "RVN",
-                                     "711" = "TBT"))
 ```
 
 ## OV
 ```{r}
 vdem <- readRDS("../data/Vdem/VDem_12_full.rds") %>%
-  select(.,COWcode,year,v2x_polyarchy,v2x_liberal,v2exl_legitideol,v2exl_legitlead,v2exl_legitperf,v2exl_legitratio,v2cagenmob,v2cademmob,v2caautmob,v2smpolsoc,v2cacamps,v2x_civlib,v2svstterr,v2stfisccap,e_regionpol) %>%
-  rename(ccode = COWcode,
+  select(.,country_name,country_text_id,COWcode,year,v2x_polyarchy,v2x_liberal,v2exl_legitideol,v2exl_legitlead,v2exl_legitperf,v2exl_legitratio,v2cagenmob,v2cademmob,v2caautmob,v2smpolsoc,v2cacamps,v2x_civlib,v2svstterr,v2stfisccap,e_regionpol) %>%
+  rename(countryname = country_name,
+         countrycode = country_text_id,
+         ccode = COWcode,
          dem_electoral = v2x_polyarchy,
          dem_liberal = v2x_liberal,
          leg_ideol = v2exl_legitideol,
@@ -94,29 +73,80 @@ vdem <- readRDS("../data/Vdem/VDem_12_full.rds") %>%
          cap_territory = v2svstterr,
          cap_fiscal = v2stfisccap,
          regionpol = e_regionpol) %>%
-  filter(.,year >= 1946)
+  filter(.,year >= 1945)
 vdem$year <- as.factor(vdem$year)
 
 ```
 
-## IV and OV
+### IV and OV
 ```{r}
-maindata <- arc %>%
-  left_join(.,ide,by = c("ccode","year","leader")) %>%
+maindata <- ide %>%
+  left_join(.,arc,by = c("ccode","year","leader")) %>%
   left_join(.,vdem,by = c("ccode","year")) %>%
-  select(.,-c(countryname))
+  select(.,-c(countryname,countrycode))
 
+maindata$countryname <- countrycode(maindata$ccode,
+                                   origin = "cown",
+                                   destination = "country.name",
+                                   custom_match = c(
+                                     "260"= "Germany",
+                                     #"340" = "Honduras",
+                                     "711" = "Tibet")) #711是西藏 vdem和ide都没有340，arc有340
+maindata$countrycode <- countrycode(maindata$ccode,
+                                   origin = "cown",
+                                   destination = "iso3c",
+                                   custom_match = c(
+                                     "260"= "DEU",
+                                     "265" = "DDR",
+                                     "315" = "CZE",
+                                     "340" = "SER",
+                                     "345" = "SRB",
+                                     "347" = "XKX",	
+                                     "511" = "ZZB",
+                                     "678" = "YEM",
+                                     "680" = "YMD",
+                                     "817" = "VDR",
+                                     "711" = "TBT"))
 ```
 
 ## CV
 
 ### cvLoda
 ```{r loda_cv}
+# regimeType
+#regime1 <- read_dta("../data/regimetpye/GWF_AllPoliticalRegimes.dta") %>%
+#  select(.,cowcode,year,gwf_regimetype)
+regime <- read_dta("../data/regimetpye/GWFtscs.dta") %>%
+  select(.,cowcode,year,gwf_regimetype) %>%
+  rename(ccode = cowcode,
+         type = gwf_regimetype) 
+regime$year <- as.factor(regime$year)
+regime$countrycode <- countrycode(regime$ccode,
+                                  origin = 'cown',
+                                  destination = 'iso3c',
+                                  custom_match = c(
+                                     "265" = "DDR",
+                                     "315" = "CZE",
+                                     "345" = "SRB",
+                                     "347" = "XKX",
+                                     "678" = "YEM",
+                                     "680" = "YMD",
+                                     "817" = "VDR"))
+
+regime <- regime %>%
+   mutate(regimeType = case_when(
+     type %in% c('party-personal','party-personal-military','party-military','party-based', 'oligarchy') ~ 1,
+     type %in% c('personal') ~ 2,
+     type %in% c('military','military-personal','indirect military') ~ 3,
+     type %in% c('monarchy') ~ 4
+   ))
+
 # GDP data
 ## pwt gdpp
 pwt <- read_dta("../data/pwt1001.dta") %>%
   select(.,countrycode,year,rgdpna,pop) %>%
-  mutate(rgdppna = rgdpna/pop)
+  rename(pop_pwt = pop) %>%
+  mutate(rgdppna = rgdpna/pop_pwt)
 pwt$year <- as.factor(pwt$year)
 ## world bank
 gdppg <- read.csv("../data/gdp_growth.csv",check.names=FALSE)  %>%
@@ -125,14 +155,34 @@ gdppg <- read.csv("../data/gdp_growth.csv",check.names=FALSE)  %>%
                  variable.name = "year",
                  value.name = "gdppg" 
                  ) %>%
-  select(.,countrycode,year,gdppg)
+  select(.,-c(`Country Name`))
 
 gdpp <- read.csv("../data/gdp (constant 2015 US$).csv",check.names=FALSE) %>%
   reshape2::melt(.,
                  id.vars=c("countrycode","Country Name"),
                  variable.name = "year",
                  value.name = "gdpp" 
+                 ) %>%
+  select(.,-c(`Country Name`))
+
+#总人口
+population <- read.csv("../data/pop.csv",check.names=FALSE) %>%
+  reshape2::melt(.,
+                 id.vars=c("countrycode","Country Name"),
+                 variable.name = "year",
+                 value.name = "pop" 
+                 ) %>%
+  mutate(popl = log(pop)) %>%
+  select(.,-c(`Country Name`))
+  
+#石油占国家gdp
+oil <- read.csv("../data/oil(% of GDP).csv",check.names=FALSE) %>%
+  reshape2::melt(.,
+                 id.vars=c("countrycode"),
+                 variable.name = "year",
+                 value.name = "oil" 
                  ) 
+## religion
 
 ## inequality
 load("../data/swiid9_4.rda")
@@ -147,19 +197,11 @@ swiid_summary$iso3c <- countrycode(swiid_summary$country,
                                    )) 
 
 swiid_summary <- swiid_summary %>%
-  select(.,iso3c,country,year,gini_disp) %>%
+  select(.,iso3c,country,year,gini_disp,gini_mkt) %>%
   rename(gini_tax = gini_disp,
          countrycode = iso3c,
          countryname = country)
 swiid_summary$year <- as.factor(swiid_summary$year)
-## 
-mys <- read.csv('../data/mys.csv') %>% 
-  reshape2::melt(id = c("country","iso3")) %>%
-  mutate(variable = str_sub(variable,-4,-1),
-         variable = as.numeric(variable)) %>% 
-  rename(countrycode = iso3,
-         year = variable,
-         Educ_yrs = value)
 
 ## DPI data for policy
 prsd <- haven::read_dta("../data/DPI2020/DPI2020.dta")
@@ -169,27 +211,138 @@ prsd <- prsd %>%
   rename(parliamentary = system,
          countrycode = ifs) 
 prsd$year <- as.factor(prsd$year)
-```
-
-## dataCombine
-```{r timeTo2014}
-
 ## inflation
-inflation <- readRDS("../data/inflation.rds") %>%
-  select(.,iso3c,year,FP.CPI.TOTL.ZG) %>%
-  rename(inflation = FP.CPI.TOTL.ZG,
-         countrycode = iso3c)
-inflation$year <- as.factor(inflation$year)
+infla_consumerPrices <- read.csv("../data/consumerPrices.csv",check.names=FALSE) %>%
+  reshape2::melt(.,
+                 id.vars=c("countrycode"),
+                 variable.name = "year",
+                 value.name = "consumerPrices" 
+                 ) 
 
-fulldata <- arc_ide %>%
+infla_deflator <- read.csv("../data/inflation(wb).csv",check.names=FALSE) %>%
+  reshape2::melt(.,
+                 id.vars=c("countrycode"),
+                 variable.name = "year",
+                 value.name = "infla_deflator" 
+                 )
+
+inflation <- readRDS("../data/inflation.rds") %>%
+   select(.,iso3c,year,FP.CPI.TOTL.ZG) %>%
+   rename(inflation = FP.CPI.TOTL.ZG,
+          countrycode = iso3c)
+inflation$year <- as.factor(inflation$year)
+```
+
+### dataCombine
+```{r timeTo2014}
+fulldata <- maindata %>%
+  left_join(.,regime,by = c("ccode","countrycode","year")) %>%
   left_join(.,pwt,by = c("countrycode","year")) %>%
+  left_join(.,gdpp,by = c("countrycode","year")) %>%
   left_join(.,gdppg,by = c("countrycode","year")) %>%
   left_join(.,prsd,by = c("countrycode","year")) %>%
-  left_join(.,inflation,by = c("countrycode","year")) %>%
-  left_join(.,swiid_summary,by = c("countrycode","year","countryname")) %>%
-  select(ccode,countrycode,countryname,year,leader,gender,yrborn,yrdied,startdate,enddate,leader_position,leader_ideology,leader_ideology_num_redux,leader_party_eng,leader_party_abbr,entry,exit,exitcode,parliamentary,yrsoffc,finittrm,yrcurnt,execrlc,execnat,polariz,termlimit,rgdpna,pop,rgdppna,gdppg,inflation,gini_tax,region) 
+  left_join(.,population,by = c("countrycode","year")) %>%
+  left_join(.,infla_consumerPrices, by = c("countrycode","year")) %>%
+  left_join(.,infla_deflator, by = c("countrycode","year")) %>%
+  left_join(.,inflation, by = c("countrycode","year")) %>%
+  left_join(.,oil, by = c("countrycode","year")) %>%
+  left_join(.,swiid_summary,by = c("countrycode","year","countryname"))
 
-#write.csv(fulldata,file = "../data/fulldata.csv",row.names = FALSE)
+rm(oil,gdpp,gdppg,infla_consumerPrices,infla_deflator,inflation,population,pwt,prsd,regime,swiid_summary,swiid)
+```
+
+
+# dataClean
+```{r}
+fulldata[fulldata < 0 ] <- NA
+fulldata <- fulldata %>%
+  group_by(countrycode) %>%
+  mutate(dem_electoral_lag = lag(dem_electoral),
+         dem_liberal_lag = lag(dem_liberal),
+         rgdppna_lag = lag(rgdppna),
+         gdpp_lag = lag(gdpp),
+         gdppg_lag = lag(gdppg),
+         infla_deflator_lag = lag(infla_deflator),
+         consumerPrices_lag = lag(consumerPrices),
+         inflation_lag = lag(inflation),
+         gini_tax_lag = lag(gini_tax),
+         gini_mkt_lag = lag(gini_mkt),
+         ) %>%
+  ungroup()
+
+fulldata <- fulldata %>%
+  select(ccode,countrycode,countryname,year,leader,gender,yrborn,yrdied,age,startdate,enddate,leader_position,leader_ideology,leader_ideology_num_redux,leader_party_eng,leader_party_abbr,entry,exit,exitcode,parliamentary,yrsoffc,finittrm,execrlc,execnat,termlimit,dem_electoral,dem_electoral_lag,dem_liberal,dem_liberal_lag,leg_ideol,leg_leader,leg_perfermance,leg_legal,mob_mass,mob_demo,mob_auto,pol_society,pol_political,lib_civil,cap_territory,cap_fiscal,type,regimeType,rgdpna,pop_pwt,rgdppna,rgdppna_lag,gdppg,gdppg_lag,gdpp,gdpp_lag,pop,popl,infla_deflator,infla_deflator_lag,consumerPrices,consumerPrices_lag,inflation,inflation_lag,gini_tax,gini_mkt,gini_tax_lag,gini_mkt_lag,oil,regionpol,region) %>%
+  filter(.,!(ccode %in% c("711","31","80","835")))
+
+
+fulldata <- fulldata %>%
+  mutate(
+    start_year = year(fulldata$startdate),
+    end_year = year(fulldata$enddate),
+    year_off = end_year - start_year,
+    score_dummy = case_when(
+   dem_electoral %in% c(0:0.5) ~ 0,
+   dem_electoral %in% c(0.51:1) ~ 1,
+  )) 
+
+dem_country <- fulldata %>%
+  select(.,ccode,countrycode,countryname,year,leader,dem_electoral,start_year,end_year) %>%
+  group_by(ccode) %>%
+  summarise(
+    score_countrym = mean(dem_electoral,na.rm = TRUE)
+  ) %>%
+  ungroup
+
+dem_lead <- fulldata %>%
+  select(.,ccode,countrycode,countryname,year,leader,dem_electoral,start_year,end_year) %>%
+  group_by(leader) %>%
+  summarise(
+    score_leaderm = mean(dem_electoral,na.rm = TRUE)
+  ) %>%
+  ungroup
+
+dem_di <- fulldata %>%
+  select(.,ccode,countrycode,countryname,year,leader,dem_electoral,start_year,end_year) %>% 
+  group_by(countryname) %>% 
+  arrange(year) %>% 
+  mutate(diff_socre = ifelse(year == start_year, (lag(dem_electoral) - lead(dem_electoral)),NA_real_)) %>% 
+  mutate(score_before = ifelse(year == start_year,(((lag(dem_electoral,default = 0) + lag(dem_electoral,2,default = 0) + lag(dem_electoral,3,default = 0) + lag(dem_electoral,4,default = 0)))/4),NA_real_)) %>%
+  mutate(score_after = ifelse(year == start_year,(((lead(dem_electoral,default = 0) + lead(dem_electoral,2,default = 0) + lead(dem_electoral,3,default = 0) +lead(dem_electoral,4,default = 0)))/4),NA_real_)) %>%
+  ungroup()
+
+df_reduced <- dem_di %>%
+  select(leader,start_year,diff_socre, score_before,score_after) %>%
+  drop_na()
+dem_di <- dem_di %>% 
+  select(-c(diff_socre,score_before,score_after))
+
+dem_di <- dem_di %>% 
+  left_join(.,df_reduced,by = c(
+    "leader" = "leader",
+    "start_year" = "start_year"
+  )) 
+
+fulldata <- fulldata %>%
+  left_join(.,dem_country) %>%
+  left_join(.,dem_lead) %>%
+  left_join(.,dem_di)
+
+fulldata$diff_lead_counrty <- fulldata$score_leaderm - fulldata$score_countrym
+fulldata$diff_before_country <- fulldata$score_before - fulldata$score_countrym
+fulldata$diff_after_country <- fulldata$score_after - fulldata$score_countrym
+fulldata$diff_lead <- fulldata$score_after - fulldata$score_before
+fulldata$diff_vol <- (fulldata$score_before - fulldata$score_countrym) - (fulldata$score_after - fulldata$score_countrym)
+#write.csv(fulldata_year,file = "../data/fulldata.csv",row.names = FALSE)
+
+fulldata_year <- fulldata %>%
+  group_by(countrycode,leader) %>%
+  summarize(year_offs = year_off) %>%
+  filter(.,year_offs >= 3) %>%
+  distinct()
+fulldata_year <- fulldata_year %>%
+  left_join(.,fulldata,by =c("countrycode","leader"))
+  
+#write.csv(fulldata_yearm,file = "../data/fulldata(clean).csv",row.names = FALSE)
 
 ```
 
@@ -197,48 +350,17 @@ fulldata <- arc_ide %>%
 
 
 
-## time to 2020
+
+
+# replicaition
 ```{r}
-ide_arc <- ide %>%
-  left_join(.,arc)
-ide_arc$countrycode <- countrycode(ide_arc$ccode,
-                                   origin = "cown",
-                                   destination = "iso3c",
-                                   custom_match = c(
-                                     "260"= "GFR",
-                                     "265" = "GDR",
-                                     "315" = "CZE",
-                                     "340" = "SER",
-                                     "345" = "YUG",
-                                     "347" = "KOS",
-                                     "511" = "ZAN",
-                                     "678" = "YAR",
-                                     "680" = "YPR",
-                                     "817" = "RVN",
-                                     "711" = "TBT"))
-ide_arc$countryname <- countrycode(ide_arc$ccode,
-                                   origin = "cown",
-                                   destination = "country.name",
-                                   custom_match = c(
-                                     "260"= "Germany",
-                                     "340" = "The Republic of Honduras",
-                                     "711" = "Tibet"))
-inflation <- readRDS("../data/inflation.rds") %>%
-  select(.,iso3c,year,FP.CPI.TOTL.ZG,country) %>%
-  rename(inflation = FP.CPI.TOTL.ZG,
-         countrycode = iso3c,
-         countryname = country)
-inflation$year <- as.factor(inflation$year)
-
-
-ide_arc2020 <- ide_arc %>%
-  left_join(.,pwt,by = c("countrycode","year")) %>%
-  left_join(.,gdppg,by = c("countrycode","year")) %>%
-  left_join(.,prsd,by = c("countrycode","year")) %>%
-  left_join(.,inflation,by = c("countrycode","year","countryname")) %>%
-  left_join(.,swiid_summary,by = c("countrycode","year","countryname")) %>%
-  select(ccode,countrycode,countryname,year,leader,gender,yrborn,yrdied,startdate,enddate,leader_position,leader_ideology,leader_ideology_num_redux,leader_party_eng,leader_party_abbr,entry,exit,exitcode,parliamentary,yrsoffc,finittrm,yrcurnt,execrlc,execnat,polariz,termlimit,rgdpna,pop,rgdppna,gdppg,inflation,gini_tax,region) 
-
-
-#write.csv(ide_arc2020,file = "../data/fulldata2020.csv",row.names = FALSE)
+worldleaders <- fulldata %>%
+  select(.,countrycode,year,leader,diff_lead) %>%
+  rename(unit = countrycode,
+         time = year,
+         growth = diff_lead) %>%
+  mutate(all = 1) %>%
+  drop_na(leader) %>%
+  unique()
+write_dta(worldleaders, "../replication/worldleaders.dta")
 ```
