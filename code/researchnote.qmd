@@ -16,20 +16,23 @@ p_load("rio",
        "countrycode",
        "car",
        "haven",
+       "lubridate",
        "modelsummary")
 ```
 
 # dataLoda
 
-## IV
-### iv_leadership
+
+
+## data_leadership
+
 ```{r dataloda}
 #arc_raw <- read_dta("../data/Archigos_4.1.dta") %>%
 #  mutate(country = str_sub(obsid,1,3),
 #         year = str_sub(obsid,5,8)) %>%
 #   filter(.,year %in% c(1945:2015))
 #write.csv(arc_raw,file = "../data/arc_raw.csv",row.names = FALSE)
-#real_year <- unique(arc$year)
+
 arc <- read.csv("../data/arc.csv") %>%
   select(.,ccode,year,leadid,leader,gender,yrborn,yrdied,startdate,enddate,entry,exit,exitcode) %>%
   mutate(age = yrdied - yrborn) %>%
@@ -39,7 +42,8 @@ arc$year <- as.factor(arc$year)
 #write.csv(arc,file = "../data/arc.csv",row.names = FALSE)
 ```
 
-### iv_ideologues
+## data_ideologues
+
 ```{r}
 ide <- read.csv("../data/Global_Leader_Ideologies_22_10_28/global_leader_ideologies.csv") %>%
   rename(countryname = country_name,
@@ -51,7 +55,8 @@ ide$year <- as.factor(ide$year)
 
 ```
 
-## OV
+## data_vdem
+
 ```{r}
 vdem <- readRDS("../data/Vdem/VDem_12_full.rds") %>%
   select(.,country_name,country_text_id,COWcode,year,v2x_polyarchy,v2x_liberal,v2exl_legitideol,v2exl_legitlead,v2exl_legitperf,v2exl_legitratio,v2cagenmob,v2cademmob,v2caautmob,v2smpolsoc,v2cacamps,v2x_civlib,v2svstterr,v2stfisccap,e_regionpol) %>%
@@ -76,10 +81,7 @@ vdem <- readRDS("../data/Vdem/VDem_12_full.rds") %>%
   filter(.,year >= 1945)
 vdem$year <- as.factor(vdem$year)
 
-```
-
-### IV and OV
-```{r}
+# ov and iv combine
 maindata <- ide %>%
   left_join(.,arc,by = c("ccode","year","leader")) %>%
   left_join(.,vdem,by = c("ccode","year")) %>%
@@ -109,9 +111,10 @@ maindata$countrycode <- countrycode(maindata$ccode,
                                      "711" = "TBT"))
 ```
 
-## CV
+## data_cv
 
 ### cvLoda
+
 ```{r loda_cv}
 # regimeType
 #regime1 <- read_dta("../data/regimetpye/GWF_AllPoliticalRegimes.dta") %>%
@@ -233,8 +236,10 @@ inflation <- readRDS("../data/inflation.rds") %>%
 inflation$year <- as.factor(inflation$year)
 ```
 
-### dataCombine
-```{r timeTo2014}
+
+# dataCombine
+
+```{r fulldata}
 fulldata <- maindata %>%
   left_join(.,regime,by = c("ccode","countrycode","year")) %>%
   left_join(.,pwt,by = c("countrycode","year")) %>%
@@ -248,20 +253,16 @@ fulldata <- maindata %>%
   left_join(.,oil, by = c("countrycode","year")) %>%
   left_join(.,swiid_summary,by = c("countrycode","year","countryname"))
 
-rm(oil,gdpp,gdppg,infla_consumerPrices,infla_deflator,inflation,population,pwt,prsd,regime,swiid_summary,swiid)
-```
-
-
-# dataClean
-```{r}
 fulldata[fulldata < 0 ] <- NA
 fulldata <- fulldata %>%
   group_by(countrycode) %>%
-  mutate(dem_electoral_lag = lag(dem_electoral),
+  mutate(dem_electoral_lag5 = lag(dem_electoral,5),
+         dem_electoral_lag1 = lag(dem_electoral,1),
          dem_liberal_lag = lag(dem_liberal),
          rgdppna_lag = lag(rgdppna),
          gdpp_lag = lag(gdpp),
          gdppg_lag = lag(gdppg),
+         gapp_lag_log = log(lag(gdpp)),
          infla_deflator_lag = lag(infla_deflator),
          consumerPrices_lag = lag(consumerPrices),
          inflation_lag = lag(inflation),
@@ -271,19 +272,20 @@ fulldata <- fulldata %>%
   ungroup()
 
 fulldata <- fulldata %>%
-  select(ccode,countrycode,countryname,year,leader,gender,yrborn,yrdied,age,startdate,enddate,leader_position,leader_ideology,leader_ideology_num_redux,leader_party_eng,leader_party_abbr,entry,exit,exitcode,parliamentary,yrsoffc,finittrm,execrlc,execnat,termlimit,dem_electoral,dem_electoral_lag,dem_liberal,dem_liberal_lag,leg_ideol,leg_leader,leg_perfermance,leg_legal,mob_mass,mob_demo,mob_auto,pol_society,pol_political,lib_civil,cap_territory,cap_fiscal,type,regimeType,rgdpna,pop_pwt,rgdppna,rgdppna_lag,gdppg,gdppg_lag,gdpp,gdpp_lag,pop,popl,infla_deflator,infla_deflator_lag,consumerPrices,consumerPrices_lag,inflation,inflation_lag,gini_tax,gini_mkt,gini_tax_lag,gini_mkt_lag,oil,regionpol,region) %>%
+  select(ccode,countrycode,countryname,year,leader,gender,yrborn,yrdied,age,startdate,enddate,leader_position,leader_ideology,leader_ideology_num_redux,leader_party_eng,leader_party_abbr,entry,exit,exitcode,parliamentary,yrsoffc,finittrm,execrlc,execnat,termlimit,dem_electoral,dem_electoral_lag5,dem_electoral_lag1,dem_liberal,dem_liberal_lag,leg_ideol,leg_leader,leg_perfermance,leg_legal,mob_mass,mob_demo,mob_auto,pol_society,pol_political,lib_civil,cap_territory,cap_fiscal,type,regimeType,rgdpna,pop_pwt,rgdppna,rgdppna_lag,gdppg,gdppg_lag,gdpp,gdpp_lag,gapp_lag_log,pop,popl,infla_deflator,infla_deflator_lag,consumerPrices,consumerPrices_lag,inflation,inflation_lag,gini_tax,gini_mkt,gini_tax_lag,gini_mkt_lag,oil,regionpol,region) %>%
   filter(.,!(ccode %in% c("711","31","80","835")))
 
+#rm(oil,gdpp,gdppg,infla_consumerPrices,infla_deflator,inflation,population,pwt,prsd,regime,swiid_summary,swiid)
+```
 
+# dataClean
+### dataPre
+```{r warning=FALSE}
 fulldata <- fulldata %>%
   mutate(
     start_year = year(fulldata$startdate),
     end_year = year(fulldata$enddate),
-    year_off = end_year - start_year,
-    score_dummy = case_when(
-   dem_electoral %in% c(0:0.5) ~ 0,
-   dem_electoral %in% c(0.51:1) ~ 1,
-  )) 
+    year_off = end_year - start_year) 
 
 dem_country <- fulldata %>%
   select(.,ccode,countrycode,countryname,year,leader,dem_electoral,start_year,end_year) %>%
@@ -301,66 +303,203 @@ dem_lead <- fulldata %>%
   ) %>%
   ungroup
 
+dem_year <- fulldata %>%
+  select(.,ccode,countrycode,countryname,year,leader,dem_electoral) %>%
+  group_by(year) %>%
+  summarise(
+    score_yearm = mean(dem_electoral,na.rm = TRUE)
+  ) %>%
+  ungroup
+
 dem_di <- fulldata %>%
   select(.,ccode,countrycode,countryname,year,leader,dem_electoral,start_year,end_year) %>% 
+  mutate(end_year = end_year - 1) %>%
   group_by(countryname) %>% 
   arrange(year) %>% 
   mutate(diff_socre = ifelse(year == start_year, (lag(dem_electoral) - lead(dem_electoral)),NA_real_)) %>% 
-  mutate(score_before = ifelse(year == start_year,(((lag(dem_electoral,default = 0) + lag(dem_electoral,2,default = 0) + lag(dem_electoral,3,default = 0) + lag(dem_electoral,4,default = 0)))/4),NA_real_)) %>%
-  mutate(score_after = ifelse(year == start_year,(((lead(dem_electoral,default = 0) + lead(dem_electoral,2,default = 0) + lead(dem_electoral,3,default = 0) +lead(dem_electoral,4,default = 0)))/4),NA_real_)) %>%
-  ungroup()
+  mutate(score_before = ifelse(year == start_year,(((lag(dem_electoral,default = 0) + lag(dem_electoral,2,default = 0)))/2),NA_real_)) %>%
+  mutate(score_after = ifelse(year == end_year,(((dem_electoral + lag(dem_electoral,default = 0)))/2),NA_real_)) %>%
+  ungroup() 
 
 df_reduced <- dem_di %>%
-  select(leader,start_year,diff_socre, score_before,score_after) %>%
-  drop_na()
-dem_di <- dem_di %>% 
-  select(-c(diff_socre,score_before,score_after))
+  select(.,ccode,leader,start_year, score_before,score_after) %>%
+  group_by(ccode,leader) %>%
+  summarise(score_before = sum(score_before,na.rm = TRUE),
+            score_after = sum(score_after,na.rm = TRUE)) %>%
+  ungroup()
+
+dem_di <- dem_di %>%
+  select(.,-c(score_before,score_after))
 
 dem_di <- dem_di %>% 
   left_join(.,df_reduced,by = c(
-    "leader" = "leader",
-    "start_year" = "start_year"
-  )) 
+    "ccode" = "ccode",
+    "leader" = "leader"
+  )) %>%
+  select(.,countrycode,year,leader,score_before,score_after)
+
 
 fulldata <- fulldata %>%
   left_join(.,dem_country) %>%
   left_join(.,dem_lead) %>%
-  left_join(.,dem_di)
+  left_join(.,dem_year) %>%
+  left_join(.,dem_di,by = c("countrycode","year","leader")) %>%
+  distinct()  
+```
 
-fulldata$diff_lead_counrty <- fulldata$score_leaderm - fulldata$score_countrym
-fulldata$diff_before_country <- fulldata$score_before - fulldata$score_countrym
-fulldata$diff_after_country <- fulldata$score_after - fulldata$score_countrym
-fulldata$diff_lead <- fulldata$score_after - fulldata$score_before
-fulldata$diff_vol <- (fulldata$score_before - fulldata$score_countrym) - (fulldata$score_after - fulldata$score_countrym)
+## dataAnalysis
+```{r warning=FALSE}
+fulldata$diff_year <- fulldata$dem_electoral - fulldata$score_yearm
+fulldata$diff_electoral <-  fulldata$dem_electoral - fulldata$dem_electoral_lag5
+fulldata$diff_electoral_rate <- fulldata$diff_electoral/ fulldata$dem_electoral_lag5
+fulldata$diff_electoral_po <- fulldata$diff_electoral_rate
+fulldata$diff_electoral_na <- fulldata$diff_electoral_rate
+fulldata$diff_electoral_po <- Recode(fulldata$diff_electoral_po,"-9999:-0.0000001 = NA")
+fulldata$diff_electoral_na <- Recode(fulldata$diff_electoral_na,"0:9999 = NA")
+fulldata_rate <- fulldata %>%
+  group_by(year) %>%
+  summarise(electoral_rate_year = Mean(diff_electoral_rate,na.rm = TRUE)) %>%
+  ungroup()
+fulldata <- fulldata %>%
+  left_join(.,fulldata_rate)
+fulldata$diff_electoral_po <- fulldata$diff_electoral_po - fulldata$electoral_rate_year
+fulldata$diff_electoral_na <- fulldata$diff_electoral_na - fulldata$electoral_rate_year
+rm(fulldata_rate)
+
+#fulldata <- fulldata %>%
+#  mutate(diff_dummy_dem = if_else(diff_electoral >= 0.03,1,0),
+#         diff_dummy_aut = if_else(diff_electoral < -0.03,1,0))
+#fulldata$diff_elec_year <- fulldata$dem_electoral - fulldata$dem_electoral_lag - fulldata$score_yearm
+
+
 #write.csv(fulldata_year,file = "../data/fulldata.csv",row.names = FALSE)
-
+#fulldata <- fulldata %>%
+#  filter(.,leader != "Truman")
 fulldata_year <- fulldata %>%
   group_by(countrycode,leader) %>%
   summarize(year_offs = year_off) %>%
   filter(.,year_offs >= 3) %>%
   distinct()
-fulldata_year <- fulldata_year %>%
-  left_join(.,fulldata,by =c("countrycode","leader"))
+
+fulldata <- fulldata_year %>%
+  left_join(.,fulldata,by =c("countrycode","leader")) %>%
+  distinct()
   
-#write.csv(fulldata_yearm,file = "../data/fulldata(clean).csv",row.names = FALSE)
+#write.csv(fulldata,file = "../data/fulldata.csv",row.names = FALSE)
 
 ```
 
 
+# data for auth
+```{r realdata}
+fulldata <-fulldata %>%
+  group_by(leader) %>%
+  mutate(first_start = first(start_year,order_by = start_year)) %>%
+  arrange(leader,start_year) %>%
+  ungroup() 
+
+fulldata <- fulldata %>%
+  group_by(leader) %>%
+  mutate(first_end = last(end_year,order_by = end_year) - 1) %>%
+  arrange(leader,end_year) %>%
+  ungroup() %>%
+  mutate(turn_over = if_else(year == first_end,1,0))
+
+fulldata_auth <- fulldata %>%
+  group_by(leader,first_start) %>%
+  mutate(auth = if_else(first(dem_electoral < 0.5),1,0)) %>%
+  ungroup() %>%
+  filter(.,auth == 1) 
+
+fulldata_auth_1989a <- fulldata_auth %>%
+  filter(.,year %in% c(1989:2020))
+
+fulldata_auth_1989b <- fulldata_auth %>%
+  filter(.,year %in% c(1945:1988))
+
+
+#fulldata_dem <- fulldata %>%
+#  group_by(leader,first_start) %>%
+#  mutate(dem = if_else(first(dem_electoral >= 0.5),1,0)) %>% 
+#  ungroup() %>%
+#  filter(.,dem == 1)
+
+worldleaders <- fulldata_auth %>%
+  select(.,countrycode,year,leader,diff_electoral,auth) %>%
+  rename(unit = countrycode,
+         time = year,
+         growth = diff_electoral) %>%
+  unique() 
+
+write_dta(worldleaders, "../replication/worldleaders.dta")
+temp <- fulldata_auth %>%
+  select(.,)
+```
+
+# regression
+```{r}
+lm_h1 <- lm(dem_electoral ~ as.factor(countrycode)+ as.factor(year),data = fulldata_auth)
+
+res_h1 <- broom::augment(lm_h1) %>%
+  select(.,`as.factor(countrycode)`,`as.factor(year)`,dem_electoral,.resid) %>%
+  rename(res = .resid,
+         countrycode = `as.factor(countrycode)`,
+         year = `as.factor(year)`)
+
+fulldata_auth <- fulldata_auth %>%
+  left_join(.,res_h1,by = c("countrycode","year","dem_electoral")) %>%
+  distinct()
 
 
 
-
+```
 
 # replicaition
+
 ```{r}
+simdata <- fulldata
+simdata$year_real <- year(ymd(simdata$year, truncated = 2))
+
+worldleaders <- simdata %>%
+  mutate(year_sim5a = year_real + 5,
+         year_sim5b = year_real - 5) %>%
+  select(.,countrycode,year_real,leader,score_country_year) %>%
+  rename(unit = countrycode,
+         time = year_real,
+         growth = score_country_year) %>%
+  mutate(all = 1) %>%
+  unique()
+  
 worldleaders <- fulldata %>%
   select(.,countrycode,year,leader,diff_lead) %>%
   rename(unit = countrycode,
          time = year,
          growth = diff_lead) %>%
   mutate(all = 1) %>%
-  drop_na(leader) %>%
   unique()
-write_dta(worldleaders, "../replication/worldleaders.dta")
+
+```
+
+# Endogenous test
+```{r}
+fulldata_auth$diff_electoral_rate <- fulldata_auth$diff_electoral/ fulldata_auth$dem_electoral_lag5
+fulldata_auth$diff_electoral_rateN <- fulldata_auth$diff_electoral_rateN / fulldata_auth$dem_electoral_lag5
+fulldata_auth$diff_electoral_rateP <- fulldata_auth$diff_electoral_rate
+fulldata_auth$diff_electoral_rateN <- fulldata_auth$diff_electoral_rate
+fulldata_auth$diff_electoral_rateP[fulldata_auth$diff_electoral_rateP < 0] <- NA
+fulldata_auth$diff_electoral_rateN[fulldata_auth$diff_electoral_rateP >= 0] <- NA
+fulldata_auth$diff_electoral_rateP_se <- scales::rescale(fulldata_auth$diff_electoral_rateP,to =c(0,1))
+fulldata_auth$diff_electoral_rateN_se <- scales::rescale(fulldata_auth$diff_electoral_rateN,to =c(0,1))
+
+temp <- fulldata_auth %>%
+  select(.,ccode,countrycode,leader,dem_electoral,dem_electoral_lag5,diff_electoral,diff_electoral_rate,diff_electoral_rateP,diff_electoral_rateP_se,diff_electoral_rateN,diff_electoral_rateN_se)
+
+lm_ctr <- lm(turn_over~ as.factor(year) + as.factor(countrycode),data = fulldata_auth)
+lm_iv_po <- lm(turn_over~ as.factor(year) + as.factor(countrycode) + diff_electoral_rateP_se,data = fulldata_auth)
+lm_iv_na <- lm(turn_over~ as.factor(year) + as.factor(countrycode) + diff_electoral_rateN_se,data = fulldata_auth)
+
+msummary(list(lm_ctr,lm_iv_po,lm_iv_na),
+         coef_omit = "as.factor*",
+         output="../outputs/regression.docx",
+         stars = TRUE)
 ```

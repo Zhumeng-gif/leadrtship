@@ -1,9 +1,6 @@
 use "/Users/zhumeng/Desktop/Spring semester_2023/leadership/replication/worldleaders.dta"
 
-rifle growth leader time country, permnum(1000) report(50) nostitch
-
 rifle growth leader time unit, permnum(1000) report(50) nostitch
-duplicates drop stockcode time,force
 
 *This code creates a program called "retroriflesimple" that is used later 
 program retroriflesimple, rclass
@@ -107,7 +104,7 @@ local report = 50
 postfile Results str30(datetime setting outcome_sample) intercept slope r2change sercorr frr using "ER_Results.dta", replace
 
 *World Leaders
-foreach i in all {
+foreach i in auth {
 clear
 set seed 60637
 use "worldleaders.dta"
