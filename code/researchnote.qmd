@@ -14,15 +14,16 @@ p_load("rio",
        "here",
        "tidyverse",
        "countrycode",
+       "ERT",
        "car",
        "haven",
        "lubridate",
+       "ggpubr",
+       "patchwork",
        "modelsummary")
 ```
 
 # dataLoda
-
-
 
 ## data_leadership
 
@@ -55,16 +56,17 @@ ide$year <- as.factor(ide$year)
 
 ```
 
-## data_vdem
+## data_vdem/ert
 
 ```{r}
 vdem <- readRDS("../data/Vdem/VDem_12_full.rds") %>%
-  select(.,country_name,country_text_id,COWcode,year,v2x_polyarchy,v2x_liberal,v2exl_legitideol,v2exl_legitlead,v2exl_legitperf,v2exl_legitratio,v2cagenmob,v2cademmob,v2caautmob,v2smpolsoc,v2cacamps,v2x_civlib,v2svstterr,v2stfisccap,e_regionpol) %>%
+  select(.,country_name,country_text_id,COWcode,year,v2xps_party,v2x_polyarchy,v2x_liberal,v2exl_legitideol,v2exl_legitlead,v2exl_legitperf,v2exl_legitratio,v2cagenmob,v2cademmob,v2caautmob,v2smpolsoc,v2cacamps,v2x_civlib,v2svstterr,v2stfisccap,e_regionpol) %>%
   rename(countryname = country_name,
          countrycode = country_text_id,
          ccode = COWcode,
          dem_electoral = v2x_polyarchy,
          dem_liberal = v2x_liberal,
+         ins_party = v2xps_party,
          leg_ideol = v2exl_legitideol,
          leg_leader = v2exl_legitlead,
          leg_perfermance = v2exl_legitperf,
@@ -81,10 +83,22 @@ vdem <- readRDS("../data/Vdem/VDem_12_full.rds") %>%
   filter(.,year >= 1945)
 vdem$year <- as.factor(vdem$year)
 
+# ert data
+ert <- episodes %>%
+  select(.,country_text_id,country_name,year,dem_ep,dem_ep_outcome_agg) %>%
+  rename(countryname = country_name,
+         countrycode = country_text_id,
+         dem_on = dem_ep,
+         dem_suc = dem_ep_outcome_agg)
+
+ert$dem_sucr <- Recode(ert$dem_suc,"c(1,3) = 1; 2 = 0; c(0,4) = NA")
+ert$year <- as.factor(ert$year)
+
 # ov and iv combine
 maindata <- ide %>%
   left_join(.,arc,by = c("ccode","year","leader")) %>%
   left_join(.,vdem,by = c("ccode","year")) %>%
+  left_join(.,ert,by = c("countryname","countrycode","year")) %>%
   select(.,-c(countryname,countrycode))
 
 maindata$countryname <- countrycode(maindata$ccode,
@@ -115,7 +129,7 @@ maindata$countrycode <- countrycode(maindata$ccode,
 
 ### cvLoda
 
-```{r loda_cv}
+```{r loda_cv,warning=FALSE}
 # regimeType
 #regime1 <- read_dta("../data/regimetpye/GWF_AllPoliticalRegimes.dta") %>%
 #  select(.,cowcode,year,gwf_regimetype)
@@ -145,6 +159,13 @@ regime <- regime %>%
    ))
 
 # GDP data
+## maddison data
+mpd <- readxl::read_xlsx("../data/mpd2020.xlsx",sheet = 3) %>%
+  rename(countryname = country,
+         gdppc_mpd = gdppc) %>%
+  select(., -c("pop"))
+mpd$year <- as.factor(mpd$year)
+  
 ## pwt gdpp
 pwt <- read_dta("../data/pwt1001.dta") %>%
   select(.,countrycode,year,rgdpna,pop) %>%
@@ -234,14 +255,32 @@ inflation <- readRDS("../data/inflation.rds") %>%
    rename(inflation = FP.CPI.TOTL.ZG,
           countrycode = iso3c)
 inflation$year <- as.factor(inflation$year)
-```
 
+
+# wvs
+#load("/Users/zhumeng/Documents/GitHub/democracy-backslide/data/WVST.rdata")
+#wvs <- WVS_TimeSeries_1981_2022_spss_v3_0 %>%
+#  select(.,COUNTRY_ALPHA,COW_NUM,S002VS,S020,Y020) %>%
+#  rename(ccode = COW_NUM,
+#         countrycode = COUNTRY_ALPHA,
+#         year = S020,
+#         wave = S002VS,
+#         epative = Y020)
+#wvs$year <- as.factor(wvs$year)
+#wvs <- wvs %>%
+#  left_join(.,vdem[,c("ccode","countrycode","year","regionpol")],by = c("countrycode","ccode", "year")) %>%
+#  group_by(regionpol,year) %>%
+#  summarise(epative_mean = Mean(epative,na.rm = TRUE))
+#rm(WVS_TimeSeries_1981_2022_spss_v3_0)
+
+```
 
 # dataCombine
 
 ```{r fulldata}
 fulldata <- maindata %>%
   left_join(.,regime,by = c("ccode","countrycode","year")) %>%
+  left_join(.,mpd,by = c("countrycode","year")) %>%
   left_join(.,pwt,by = c("countrycode","year")) %>%
   left_join(.,gdpp,by = c("countrycode","year")) %>%
   left_join(.,gdppg,by = c("countrycode","year")) %>%
@@ -251,7 +290,9 @@ fulldata <- maindata %>%
   left_join(.,infla_deflator, by = c("countrycode","year")) %>%
   left_join(.,inflation, by = c("countrycode","year")) %>%
   left_join(.,oil, by = c("countrycode","year")) %>%
-  left_join(.,swiid_summary,by = c("countrycode","year","countryname"))
+  select(.,-c(`countryname.y`)) %>%
+  rename(countryname = "countryname.x") %>%
+  left_join(.,swiid_summary,by = c("countrycode","year","countryname")) 
 
 fulldata[fulldata < 0 ] <- NA
 fulldata <- fulldata %>%
@@ -260,6 +301,8 @@ fulldata <- fulldata %>%
          dem_electoral_lag1 = lag(dem_electoral,1),
          dem_liberal_lag = lag(dem_liberal),
          rgdppna_lag = lag(rgdppna),
+         rgdppna_log = log(rgdppna),
+         gdppc_mpd_log = log(gdppc_mpd),
          gdpp_lag = lag(gdpp),
          gdppg_lag = lag(gdppg),
          gapp_lag_log = log(lag(gdpp)),
@@ -271,15 +314,21 @@ fulldata <- fulldata %>%
          ) %>%
   ungroup()
 
+fulldata$rgdppna_log_z = scales::rescale(fulldata$rgdppna_log,to = c(0,1))
+
+fulldata$gdppc_mpd_log_z = scales::rescale(fulldata$gdppc_mpd_log,to = c(0,1))
+
 fulldata <- fulldata %>%
-  select(ccode,countrycode,countryname,year,leader,gender,yrborn,yrdied,age,startdate,enddate,leader_position,leader_ideology,leader_ideology_num_redux,leader_party_eng,leader_party_abbr,entry,exit,exitcode,parliamentary,yrsoffc,finittrm,execrlc,execnat,termlimit,dem_electoral,dem_electoral_lag5,dem_electoral_lag1,dem_liberal,dem_liberal_lag,leg_ideol,leg_leader,leg_perfermance,leg_legal,mob_mass,mob_demo,mob_auto,pol_society,pol_political,lib_civil,cap_territory,cap_fiscal,type,regimeType,rgdpna,pop_pwt,rgdppna,rgdppna_lag,gdppg,gdppg_lag,gdpp,gdpp_lag,gapp_lag_log,pop,popl,infla_deflator,infla_deflator_lag,consumerPrices,consumerPrices_lag,inflation,inflation_lag,gini_tax,gini_mkt,gini_tax_lag,gini_mkt_lag,oil,regionpol,region) %>%
+  select(ccode,countrycode,countryname,year,leader,gender,yrborn,yrdied,age,startdate,enddate,leader_position,leader_ideology,leader_ideology_num_redux,leader_party_eng,leader_party_abbr,entry,exit,exitcode,parliamentary,yrsoffc,finittrm,execrlc,execnat,termlimit,dem_electoral,dem_electoral_lag5,dem_electoral_lag1,dem_liberal,dem_liberal_lag,dem_on,dem_suc,dem_sucr,ins_party,leg_ideol,leg_leader,leg_perfermance,leg_legal,mob_mass,mob_demo,mob_auto,pol_society,pol_political,lib_civil,cap_territory,cap_fiscal,type,regimeType,rgdpna,gdppc_mpd_log,gdppc_mpd_log_z,pop_pwt,rgdppna,rgdppna_lag,rgdppna_log_z,gdppg,gdppg_lag,gdpp,gdpp_lag,gapp_lag_log,pop,popl,infla_deflator,infla_deflator_lag,consumerPrices,consumerPrices_lag,inflation,inflation_lag,gini_tax,gini_mkt,gini_tax_lag,gini_mkt_lag,oil,regionpol,region) %>%
   filter(.,!(ccode %in% c("711","31","80","835")))
 
 #rm(oil,gdpp,gdppg,infla_consumerPrices,infla_deflator,inflation,population,pwt,prsd,regime,swiid_summary,swiid)
 ```
 
 # dataClean
+
 ### dataPre
+
 ```{r warning=FALSE}
 fulldata <- fulldata %>%
   mutate(
@@ -348,31 +397,20 @@ fulldata <- fulldata %>%
 ```
 
 ## dataAnalysis
+
 ```{r warning=FALSE}
 fulldata$diff_year <- fulldata$dem_electoral - fulldata$score_yearm
 fulldata$diff_electoral <-  fulldata$dem_electoral - fulldata$dem_electoral_lag5
-fulldata$diff_electoral_rate <- fulldata$diff_electoral/ fulldata$dem_electoral_lag5
-fulldata$diff_electoral_po <- fulldata$diff_electoral_rate
-fulldata$diff_electoral_na <- fulldata$diff_electoral_rate
-fulldata$diff_electoral_po <- Recode(fulldata$diff_electoral_po,"-9999:-0.0000001 = NA")
-fulldata$diff_electoral_na <- Recode(fulldata$diff_electoral_na,"0:9999 = NA")
-fulldata_rate <- fulldata %>%
-  group_by(year) %>%
-  summarise(electoral_rate_year = Mean(diff_electoral_rate,na.rm = TRUE)) %>%
-  ungroup()
-fulldata <- fulldata %>%
-  left_join(.,fulldata_rate)
-fulldata$diff_electoral_po <- fulldata$diff_electoral_po - fulldata$electoral_rate_year
-fulldata$diff_electoral_na <- fulldata$diff_electoral_na - fulldata$electoral_rate_year
-rm(fulldata_rate)
-
-#fulldata <- fulldata %>%
-#  mutate(diff_dummy_dem = if_else(diff_electoral >= 0.03,1,0),
-#         diff_dummy_aut = if_else(diff_electoral < -0.03,1,0))
-#fulldata$diff_elec_year <- fulldata$dem_electoral - fulldata$dem_electoral_lag - fulldata$score_yearm
+fulldata$diff_electoral_year <-  fulldata$diff_electoral - fulldata$score_yearm
+fulldata$diff_electoral_po <- fulldata$diff_electoral
+fulldata$diff_electoral_na <- fulldata$diff_electoral
+fulldata$diff_electoral_po[fulldata$diff_electoral_po < 0] <- NA
+fulldata$diff_electoral_na[fulldata$diff_electoral_na >= 0] <- NA
+fulldata$diff_electoral_po <- fulldata$diff_electoral_po - fulldata$score_yearm
+fulldata$diff_electoral_na <- fulldata$diff_electoral_na - fulldata$score_yearm
 
 
-#write.csv(fulldata_year,file = "../data/fulldata.csv",row.names = FALSE)
+#write.csv(fulldata,file = "../data/fulldata.csv",row.names = FALSE)
 #fulldata <- fulldata %>%
 #  filter(.,leader != "Truman")
 fulldata_year <- fulldata %>%
@@ -389,8 +427,10 @@ fulldata <- fulldata_year %>%
 
 ```
 
-
 # data for auth
+
+## case selection_1
+
 ```{r realdata}
 fulldata <-fulldata %>%
   group_by(leader) %>%
@@ -411,32 +451,46 @@ fulldata_auth <- fulldata %>%
   ungroup() %>%
   filter(.,auth == 1) 
 
+fulldata_dem <- fulldata %>%
+  group_by(leader,first_start) %>%
+  mutate(dem = if_else(first(dem_electoral >= 0.5),1,0)) %>% 
+  ungroup() %>%
+  filter(.,dem == 1)
+
 fulldata_auth_1989a <- fulldata_auth %>%
   filter(.,year %in% c(1989:2020))
 
 fulldata_auth_1989b <- fulldata_auth %>%
   filter(.,year %in% c(1945:1988))
 
-
-#fulldata_dem <- fulldata %>%
-#  group_by(leader,first_start) %>%
-#  mutate(dem = if_else(first(dem_electoral >= 0.5),1,0)) %>% 
-#  ungroup() %>%
-#  filter(.,dem == 1)
-
-worldleaders <- fulldata_auth %>%
-  select(.,countrycode,year,leader,diff_electoral,auth) %>%
+worldleaders <- fulldata_auth_1989b %>%
+  select(.,countrycode,year,leader,diff_electoral_po,auth) %>%
   rename(unit = countrycode,
          time = year,
-         growth = diff_electoral) %>%
+         growth = diff_electoral_po) %>%
   unique() 
 
 write_dta(worldleaders, "../replication/worldleaders.dta")
-temp <- fulldata_auth %>%
-  select(.,)
+```
+
+## case selection 2
+
+```{r case selecetion}
+temp <- fulldata_auta %>%
+  select(.,countrycode,year,leader,dem_electoral,auth,autha)
+
+fulldata_auta <- fulldata_auth %>%
+  group_by(leader,first_start) %>%
+  mutate(autha = if_else(first(dem_electoral < 0.1),1,0)) %>%
+  ungroup() %>%
+  filter(.,autha == 1)
+
+fulldata_autb <- fulldata_auth %>%
+  filter(.,dem_electoral >= 0.1) 
 ```
 
 # regression
+
 ```{r}
 lm_h1 <- lm(dem_electoral ~ as.factor(countrycode)+ as.factor(year),data = fulldata_auth)
 
@@ -450,8 +504,779 @@ fulldata_auth <- fulldata_auth %>%
   left_join(.,res_h1,by = c("countrycode","year","dem_electoral")) %>%
   distinct()
 
+```
+
+# plot_country
+
+```{r country}
+df_rus <- fulldata %>%
+  filter(.,countrycode == "RUS") %>%
+  filter(leader %in% c("Stalin","Khrushchev","Brezhnev","Gorbachev","Yeltsin","Putin")) %>%
+  select(.,year,leader,startdate,dem_electoral,gdppc_mpd_log_z,ins_party) %>%
+mutate(startdate = case_when(leader == "Stalin" ~ "1922/4/03",
+leader == "Khrushchev" ~ "1953/3/20",
+leader == "Brezhnev" ~ "1964/10/15",
+leader == "Gorbachev" ~ "1985/3/11",
+leader == "Yeltsin" ~ "1991/8/21",
+leader == "Putin" ~ "2000/3/27"))
+
+plot_rus <- df_rus %>%
+  ggplot() +
+  geom_line(aes(x=year, y=dem_electoral,group = 1,color = "dem_electoral")) +
+  geom_line(aes(x=year, y=gdppc_mpd_log_z,group = 1,color = "gdppc_mpd_log_z"))+
+  geom_line(aes(x=year, y=ins_party,group = 1,color = "ins_party")) +
+  scale_x_discrete(breaks = seq(1945,2020,5)) +
+  scale_colour_manual(values = c("#000000","#CCCCCC","#999999"),
+                      breaks = c("dem_electoral","gdppc_mpd_log_z","ins_party"),
+                      labels=c("Electoral democracy","GDP per capita","Party institutionalization"),
+                      name = " ") +
+  geom_vline(aes(xintercept="1953"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1964"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1985"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1991"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2000"),color = "#999999",linetype="dashed") +
+  annotate("text", x = "1948", y = .23, label = "Stalin",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1958", y = .23, label = "Khrushchev",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1973", y = .23, label = "Brezhnev",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1988", y = .25, label = "Gorbanchev",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1996", y = .23, label = "Yeltsin",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "2010", y = .23, label = "Putin",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  theme(legend.position = "right") +
+  xlab("Year") +
+  ylab("Normalized Indicators") +
+  labs(title="Russia") +
+  scale_y_continuous(limits=c(0,1)) +
+  theme(legend.justification = c(0,1),
+        legend.position = c(0,1),
+        legend.key.size = unit(6,"pt"),
+        legend.text=element_text(size=4),
+        axis.text = element_text(size = 6,angle = 45),
+        panel.grid.major=element_line(colour=NA),
+        panel.background = element_rect(fill = "transparent",colour = NA),
+        plot.background = element_rect(fill = "transparent",colour = "#999999",linewidth = .5),
+        panel.grid.minor = element_blank())
 
 
+plot_rus
+  
+ggsave(plot_rus,file = "../fig/plot_rus.pdf",width = 10)
+
+## 
+df_egypt <- fulldata %>%
+  filter(.,ccode == "651") %>%
+  filter(leader %in% c("Farouk","Nasser","Sadat","Mubarak","al-Sisi")) %>%
+  select(.,year,leader,startdate,dem_electoral,gdppc_mpd_log_z,ins_party) %>%
+mutate(startdate = case_when(
+  leader == "Farouk" ~ "1940/1/03",
+  leader == "Nasser" ~ "1954/11/17",
+  leader == "Sadat" ~ "1970/9/28",
+  leader == "Mubarak" ~ "1981/10/14",
+  leader == "al-Sisi" ~ "2014/6/9"))
+
+plot_egypt <- df_egypt %>%
+  ggplot() +
+  geom_line(aes(x=year, y=dem_electoral,group = 1,color = "dem_electoral")) +
+  geom_line(aes(x=year, y=gdppc_mpd_log_z,group = 1,color = "gdppc_mpd_log_z")) +
+  geom_line(aes(x=year, y=ins_party,group = 1,color = "ins_party")) +
+  scale_x_discrete(breaks = seq(1945,2020,5)) +
+  scale_colour_manual(values = c("#000000","#CCCCCC","#996600"),
+                      breaks = c("dem_electoral","gdppc_mpd_log_z","ins_party"),
+                      labels=c("dem_electoral","gdppc_mpd_log_z","ins_party"),
+                      name = "type") +
+  geom_vline(aes(xintercept="1954"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1970"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1981"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2014"),color = "#999999",linetype="dashed") +
+  annotate("text", x = "1948", y = .5, label = "Farouk",
+             color="#000000",size = 4,fontface="bold" ) +
+  annotate("text", x = "1960", y = .5, label = "Nasser",
+             color="#000000",size = 4,fontface="bold" ) +
+  annotate("text", x = "1975", y = .5, label = "Sadat",
+             color="#000000",size = 4,fontface="bold" ) +
+  annotate("text", x = "1995", y = .5, label = "Mubarak",
+             color="#000000",size = 4,fontface="bold" ) +
+  annotate("text", x = "2018", y = .5, label = "al-Sisi",
+             color="#000000",size = 4,fontface="bold" ) +
+  theme(legend.position = "right") +
+  xlab("Year") +
+  ylab("Leader's Index") +
+  theme(legend.justification = c(1,0),
+        legend.position = c(1,0),
+        legend.key.size = unit(10,"pt"),
+        panel.grid.major=element_line(colour=NA),
+        panel.background = element_rect(fill = "transparent",colour = NA),
+        plot.background = element_rect(fill = "transparent",colour = NA),
+        panel.grid.minor = element_blank())
+
+plot_egypt
+
+ggsave(plot_egypt,file = "../fig/plot_egpyt.pdf",width = 8)
+
+
+## 
+df_korea <- fulldata %>%
+  filter(.,ccode == "732") %>%
+  filter(leader %in% c("Rhee","Hee Park","Chun Doo Hwan","Roh Tae Woo","Kim Young Sam","Kim Dae Jun","Roh Moo Hyun","Lee Myung Bak","Park Geun-hye","Moon Jae-in")) %>%
+  select(.,year,leader,startdate,dem_electoral,gdppc_mpd_log_z,ins_party) %>%
+mutate(startdate = case_when(
+  leader == "Rhee" ~ "1948/8/15",
+  leader == "Hee Park" ~ "1961/7/3",
+  leader == "Chun Doo Hwan" ~ "1980/8/27",
+  leader == "Roh Tae Woo" ~ "1988/2/25",
+  leader == "Kim Young Sam" ~ "1993/2/25",
+  leader == "Kim Dae Jun" ~ "1998/2/25",
+  leader == "Roh Moo Hyun" ~ "2003/2/25",
+  leader == "Lee Myung Bak" ~ "2008/2/25",
+  leader == "Park Geun-hye" ~ "2013/2/25",
+  leader == "Moon Jae-in" ~ "2017/5/18"))
+
+plot_korea <- df_korea %>%
+  ggplot() +
+  geom_line(aes(x=year, y=dem_electoral,group = 1,color = "dem_electoral")) +
+  geom_line(aes(x=year, y=gdppc_mpd_log_z,group = 1,color = "gdppc_mpd_log_z")) +
+  geom_line(aes(x=year, y=ins_party,group = 1,color = "ins_party")) +
+  scale_x_discrete(breaks = seq(1945,2020,5)) +
+  scale_colour_manual(values = c("#000000","#CCCCCC","#996600"),
+                      breaks = c("dem_electoral","gdppc_mpd_log_z","ins_party"),
+                      labels=c("dem_electoral","gdppc_mpd_log_z","ins_party"),
+                      name = " ") +
+  geom_vline(aes(xintercept="1961"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1980"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1988"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1993"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1998"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2003"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2008"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2013"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2017"),color = "#999999",linetype="dashed") +
+  annotate("text", x = "1955", y = .35, label = "Rhee",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1970", y = .35, label = "Hee Park",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1983", y = .35, label = "ChunDoo\n-Hwan",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1990", y = .35, label = "Roh\n-Tae\n-Woo",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1995", y = .35, label = "Kim\n-Young\n-Sam",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1998", y = .2, label = "Kim\n-Dae\n-Jun",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2006", y = .5, label = "Roh\n-Moo\n-Hyun",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2010", y = .35, label = "Lee\n-Myung\n-Bak",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2015", y = .4, label = "Park\n-Geun\n-hye",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2019", y = .5, label = "Moon-\nJaein",
+             color="#000000",size = 3,fontface="bold" ) +
+  theme(legend.position = "right") +
+  xlab("Year") +
+  ylab("Leader's Index") +
+  theme(legend.justification = c(0,1),
+        legend.position = c(0,1),
+        legend.key.size = unit(10,"pt"),
+        panel.grid.major=element_line(colour=NA),
+        panel.background = element_rect(fill = "transparent",colour = NA),
+        plot.background = element_rect(fill = "transparent",colour = NA),
+        panel.grid.minor = element_blank())
+
+plot_korea
+
+ggsave(plot_korea,file = "../fig/plot_korea.pdf",width = 8)
+
+
+## SAF
+df_saf <- fulldata %>%
+  filter(.,ccode == "560") %>%
+  filter(leader %in% c("Malan","Strijdom","Verwoerd","Vorster","Botha","deKlerk","Mandela","Mbeki","Zuma","Ramaphosa")) %>%
+  select(.,year,leader,startdate,dem_electoral,gdppc_mpd_log_z,ins_party) %>%
+mutate(startdate = case_when(
+  leader == "Malan" ~ "1948/6/13",
+  leader == "Strijdom" ~ "1954/12/2",
+  leader == "Verwoerd" ~ "1958/9/3",
+  leader == "Vorster" ~ "1966/9/13",
+  leader == "Botha" ~ "1978/9/28",
+  leader == "deKlerk" ~ "1989/8/15",
+  leader == "Mandela" ~ "1994/5/10",
+  leader == "Mbeki" ~ "1996/6/16",
+  leader == "Zuma" ~ "2009/5/9",
+  leader == "Ramaphosa" ~ "2018/2/15"))
+
+plot_saf <- df_saf %>%
+  ggplot() +
+  geom_line(aes(x=year, y=dem_electoral,group = 1,color = "dem_electoral")) +
+  geom_line(aes(x=year, y=gdppc_mpd_log_z,group = 1,color = "gdppc_mpd_log_z")) +
+  geom_line(aes(x=year, y=ins_party,group = 1,color = "ins_party")) +
+  scale_x_discrete(breaks = seq(1945,2020,5)) +
+  scale_colour_manual(values = c("#000000","#CCCCCC","#999999"),
+                      breaks = c("dem_electoral","gdppc_mpd_log_z","ins_party"),
+                      labels=c("Electoral democracy","GDP per capita","Party institutionalization"),
+                      name = " ") +
+  geom_vline(aes(xintercept="1954"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1958"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1966"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1978"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1989"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1994"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1996"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2009"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2018"),color = "#999999",linetype="dashed") +
+  annotate("text", x = "1950", y = .35, label = "Malan",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1956", y = .35, label = "Strijdom",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1962", y = .35, label = "Verwoerd",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1972", y = .35, label = "Vorster",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1984", y = .35, label = "Botha",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1992", y = .35, label = "deKlerk",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1995", y = .2, label = "Mand-\nela",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "2002", y = .35, label = "Mbeki",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "2013", y = .35, label = "Zuma",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "2019", y = .35, label = "Ram-\napn\n-hosa",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  theme(legend.position = "right") +
+  xlab("Year") +
+  ylab("Normalized Indicators") +
+  labs(title="South Africa") +
+  scale_y_continuous(limits=c(0,1)) +
+  theme(legend.justification = c(0,1),
+        legend.position = c(0,1),
+        legend.key.size = unit(6,"pt"),
+        legend.text=element_text(size = 4),
+        axis.text = element_text(size = 6,angle = 45),
+        panel.grid.major=element_line(colour=NA),
+        panel.background = element_rect(fill = "transparent",colour = NA),
+        plot.background = element_rect(fill = "transparent",colour = "#999999",linewidth = 0.5),
+        panel.grid.minor = element_blank())
+
+plot_saf
+
+ggsave(plot_saf,file = "../fig/plot_saf.pdf",width = 10)
+
+## TaiWan
+df_taw <- fulldata %>%
+  filter(.,ccode == "713") %>%
+  filter(leader %in% c("Chiang Kai-shek","Yen Chia-Kan","Chiang Ching-Kuo","Lee Teng-Hui","Chen Shui-bian","Ma Ying-jeou","Tsai Ing-wen")) %>%
+  select(.,year,leader,startdate,dem_electoral,gdppc_mpd_log_z,ins_party) %>%
+mutate(startdate = case_when(
+  leader == "Chiang Kai-shek" ~ "1950/3/1",
+  leader == "Yen Chia-Kan" ~ "1975/4/5",
+  leader == "Chiang Ching-Kuo" ~ "1978/5/20",
+  leader == "Lee Teng-Hui" ~ "1988/1/3",
+  leader == "Chen Shui-bian" ~ "2000/5/21",
+  leader == "Ma Ying-jeou" ~ "2008/5/20",
+  leader == "Tsai Ing-wen" ~ "2016/5/20"))
+
+plot_taw <- df_taw %>%
+  ggplot() +
+  geom_line(aes(x=year, y=dem_electoral,group = 1,color = "dem_electoral")) +
+  geom_line(aes(x=year, y=gdppc_mpd_log_z,group = 1,color = "gdppc_mpd_log_z")) +
+  geom_line(aes(x=year, y=ins_party,group = 1,color = "ins_party")) +
+  scale_x_discrete(breaks = seq(1945,2020,5)) +
+  scale_colour_manual(values = c("#000000","#CCCCCC","#999999"),
+                      breaks = c("dem_electoral","gdppc_mpd_log_z","ins_party"),
+                      labels=c("Electoral democracy","GDP per capita","Party institutionalization"),                      
+                      name = " ") +
+  geom_vline(aes(xintercept="1975"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1978"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1988"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2000"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2008"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2016"),color = "#999999",linetype="dashed") +
+  annotate("text", x = "1960", y = .2, label = "Chiang Kai-shek",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1976", y = .2, label = "Yen",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1982", y = .2, label = "Chiang\nChing-Kuo",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1995", y = .2, label = "Lee",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "2004", y = .2, label = "Chen",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "2012", y = .2, label = "Ma",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "2018", y = .2, label = "Tsai",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  theme(legend.position = "right") +
+  xlab("Year") +
+  ylab("Normalized Indicators") +
+  labs(title="TaiWan") +
+  scale_y_continuous(limits=c(0,1)) +
+  theme(legend.justification = c(0,1),
+        legend.position = c(0,1),
+        legend.key.size = unit(6,"pt"),
+        legend.text=element_text(size = 4),
+        axis.text = element_text(size = 6,angle = 45),
+        panel.grid.major=element_line(colour=NA),
+        panel.background = element_rect(fill = "transparent",colour = NA),
+        plot.background = element_rect(fill = "transparent",colour = "#999999",linewidth = 0.5),
+        panel.grid.minor = element_blank())
+
+plot_taw
+
+ggsave(plot_taw,file = "../fig/plot_taw.pdf",width = 10)
+
+
+## Argentina
+df_arg <- fulldata %>%
+  filter(.,ccode == "160") %>%
+  filter(leader %in% c("Peron","Aramburu","Frondizi","Arturo Illia","Ongania","Videla","Alfonsin","Menem","Nestor Kirchner","Fernandez de Kirchner","Mauricio Macri","Fernandez")) %>%
+  select(.,year,leader,startdate,dem_electoral,gdppc_mpd_log_z,ins_party) %>%
+mutate(startdate = case_when(
+  leader == "Peron" ~ "1946/6/4",
+  leader == "Aramburu" ~ "1955/11/13",
+  leader == "Frondizi" ~ "1958/9/3",
+  leader == "Arturo Illia" ~ "1963/10/12",
+  leader == "Ongania" ~ "1966/6/28",
+  leader == "Videla" ~ "1976/3/29",
+  leader == "Alfonsin" ~ "1983/12/10",
+  leader == "Menem" ~ "1989/7/8",
+  leader == "Nestor Kirchner" ~ "2003/5/25",
+  leader == "Fernandez de Kirchner" ~ "2007/12/10",
+  leader == "Mauricio Macri" ~ "2015/11/22",
+  leader == "Fernandez" ~ "2019/12/10"))
+
+plot_arg<- df_arg %>%
+  ggplot() +
+  geom_line(aes(x=year, y=dem_electoral,group = 1,color = "dem_electoral")) +
+  geom_line(aes(x=year, y=gdppc_mpd_log_z,group = 1,color = "gdppc_mpd_log_z")) +
+  geom_line(aes(x=year, y=ins_party,group = 1,color = "ins_party")) +
+  scale_x_discrete(breaks = seq(1945,2020,5)) +
+  scale_colour_manual(values = c("#000000","#CCCCCC","#996600"),
+                      breaks = c("dem_electoral","gdppc_mpd_log_z","ins_party"),
+                      labels=c("dem_electoral","gdppc_mpd_log_z","ins_party"),
+                      name = " ") +
+  geom_vline(aes(xintercept="1946"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1955"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1958"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1963"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1966"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1976"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1983"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1989"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2003"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2007"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2015"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2019"),color = "#999999",linetype="dashed") +
+  annotate("text", x = "1950", y = .35, label = "Peron",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1956", y = .6, label = "Aram-\nburu",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1960", y = .6, label = "Frondizi",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1965", y = .6, label = "Arturo\nIllia",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1969", y = .6, label = "Ongania",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1978", y = .6, label = "Videla",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1986", y = .6, label = "Alfonsin",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1995", y = .6, label = "Menem",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2005", y = .2, label = "Nestor\nKirchner",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2011", y = .35, label = "Fernandez\nde\n Kirchner",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2017", y = .35, label = "Mauri-\ncio\nMacri",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2020", y = .35, label = "Fern\nan-\ndez",
+             color="#000000",size = 3,fontface="bold" ) +
+  theme(legend.position = "right") +
+  xlab("Year") +
+  ylab("Leader's Index") +
+  theme(legend.justification = c(0,1),
+        legend.position = c(0,1),
+        legend.key.size = unit(10,"pt"),
+        panel.grid.major=element_line(colour=NA),
+        panel.background = element_rect(fill = "transparent",colour = NA),
+        plot.background = element_rect(fill = "transparent",colour = NA),
+        panel.grid.minor = element_blank())
+
+plot_arg
+
+ggsave(plot_arg,file = "../fig/plot_arg.pdf",width = 8)
+
+
+##Spain
+df_spa <- fulldata %>%
+  filter(.,ccode == "230") %>%
+  filter(leader %in% c("Franco","Suarez Gonzalez","Gonzalez Marquez","Aznar","Rodriguez Zapatero","Rajoy Brey","Sanchez")) %>%
+  select(.,year,leader,startdate,dem_electoral,gdppc_mpd_log_z,ins_party) %>%
+mutate(startdate = case_when(
+  leader == "Franco" ~ "1946/6/4",
+  leader == "Suarez Gonzalez" ~ "1976/1/1",
+  leader == "Gonzalez Marquez" ~ "1982/1/1",
+  leader == "Aznar" ~ "1996/1/1",
+  leader == "Rodriguez Zapatero" ~ "2004/1/1",
+  leader == "Rajoy Brey" ~ "2011/1/1",
+  leader == "Sanchez" ~ "2018/1/1"))
+
+plot_spain <- df_spa %>%
+  ggplot() +
+  geom_line(aes(x=year, y=dem_electoral,group = 1,color = "dem_electoral")) +
+  geom_line(aes(x=year, y=gdppc_mpd_log_z,group = 1,color = "gdppc_mpd_log_z")) +
+  geom_line(aes(x=year, y=ins_party,group = 1,color = "ins_party")) +
+  scale_x_discrete(breaks = seq(1945,2020,5)) +
+  scale_colour_manual(values = c("#000000","#CCCCCC","#996600"),
+                      breaks = c("dem_electoral","gdppc_mpd_log_z","ins_party"),
+                      labels=c("dem_electoral","gdppc_mpd_log_z","ins_party"),
+                      name = " ") +
+  geom_vline(aes(xintercept="1946"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1976"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1982"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1996"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2004"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2011"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2018"),color = "#999999",linetype="dashed") +
+  annotate("text", x = "1960", y = .2, label = "Franco",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1979", y = .2, label = "Suarez\nGonzalez",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1990", y = .2, label = "Gonzalez\nMarquez",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2000", y = .2, label = "Aznar",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2008", y = .2, label = "Rodriguez\nZapatero",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2014", y = .2, label = "Rajoy\nBrey",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2019", y = .2, label = "San-\nchez",
+             color="#000000",size = 3,fontface="bold" ) +
+  theme(legend.position = "right") +
+  xlab("Year") +
+  ylab("Leader's Index") +
+  theme(legend.justification = c(0,1),
+        legend.position = c(0,1),
+        legend.key.size = unit(10,"pt"),
+        panel.grid.major=element_line(colour=NA),
+        panel.background = element_rect(fill = "transparent",colour = NA),
+        plot.background = element_rect(fill = "transparent",colour = NA),
+        panel.grid.minor = element_blank())
+
+plot_spain
+
+ggsave(plot_spain,file = "../fig/plot_spain.pdf",width = 8)
+
+
+## Ghana
+
+df_gha <- fulldata %>%
+  filter(.,ccode == "452") %>%
+  filter(leader %in% c("Nkrumah","Ankrah","Busia","Acheampong","Rawlings","John Agyekum Kufuor","Atta Mills","John Mahama","Akufo-Addo")) %>%
+  select(.,year,leader,startdate,dem_electoral,gdppc_mpd_log_z,ins_party) %>%
+mutate(startdate = case_when(
+  leader == "Nkrumah" ~ "1952/3/21",
+  leader == "Ankrah" ~ "1966/2/24",
+  leader == "Busia" ~ "1969/9/3",
+  leader == "Acheampong" ~ "1972/7/13",
+  leader == "Rawlings" ~ "1981/12/31",
+  leader == "John Agyekum Kufuor" ~ "2001/1/8",
+  leader == "Atta Mills" ~ "2009/1/7",
+  leader == "John Mahama" ~ "2012/12/7",
+  leader == "Akufo-Addo" ~ "2020/12/1"))
+
+plot_gha <- df_gha %>%
+  ggplot() +
+  geom_line(aes(x=year, y=dem_electoral,group = 1,color = "dem_electoral")) +
+  geom_line(aes(x=year, y=gdppc_mpd_log_z,group = 1,color = "gdppc_mpd_log_z")) +
+  geom_line(aes(x=year, y=ins_party,group = 1,color = "ins_party")) +
+  scale_x_discrete(breaks = seq(1945,2020,5)) +
+  scale_colour_manual(values = c("#000000","#CCCCCC","#996600"),
+                      breaks = c("dem_electoral","gdppc_mpd_log_z","ins_party"),
+                      labels=c("dem_electoral","gdppc_mpd_log_z","ins_party"),
+                      name = " ") +
+  geom_vline(aes(xintercept="1966"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1969"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1972"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1981"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2001"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2009"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2012"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2020"),color = "#999999",linetype="dashed") +
+  annotate("text", x = "1958", y = .2, label = "Nkrumah",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1967", y = .2, label = "Ankrah",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1970", y = .2, label = "Busia",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1975", y = .2, label = "Acheampong",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1994", y = .2, label = "Rawlings",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2005", y = .2, label = "John Agyekum Kufuor",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2011", y = .2, label = "Atta Mills",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2016", y = .2, label = "John Mahama",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2020", y = .2, label = "Akufo-\nAddo",
+             color="#000000",size = 3,fontface="bold" ) +
+  theme(legend.position = "right") +
+  xlab("Year") +
+  ylab("Leader's Index") +
+  theme(legend.justification = c(0,1),
+        legend.position = c(0,1),
+        legend.key.size = unit(10,"pt"),
+        panel.grid.major=element_line(colour=NA),
+        panel.background = element_rect(fill = "transparent",colour = NA),
+        plot.background = element_rect(fill = "transparent",colour = NA),
+        panel.grid.minor = element_blank())
+
+plot_gha
+
+ggsave(plot_gha,file = "../fig/plot_gha.pdf",width = 8)
+
+### Indonesia
+
+df_ind <- fulldata %>%
+  filter(.,ccode == "850") %>%
+  filter(leader %in% c("Sukarno","Suharto","Megawati Sukarnoputri","Bambang Yudhoyono","Joko Widodo")) %>%
+  select(.,year,leader,startdate,dem_electoral,gdppc_mpd_log_z,ins_party) %>%
+mutate(startdate = case_when(
+  leader == "Sukarno" ~ "1945/8/17",
+  leader == "Suharto" ~ "1966/3/12",
+  leader == "Megawati Sukarnoputri" ~ "2001/7/24",
+  leader == "Bambang Yudhoyono" ~ "2004/10/20",
+  leader == "Joko Widodo" ~ "2004/10/21"))
+
+plot_ind <- df_ind %>%
+  ggplot() +
+  geom_line(aes(x=year, y=dem_electoral,group = 1,color = "dem_electoral")) +
+  geom_line(aes(x=year, y=gdppc_mpd_log_z,group = 1,color = "gdppc_mpd_log_z")) +
+  geom_line(aes(x=year, y=ins_party,group = 1,color = "ins_party")) +
+  scale_x_discrete(breaks = seq(1945,2020,5)) +
+  scale_colour_manual(values = c("#000000","#CCCCCC","#996600"),
+                      breaks = c("dem_electoral","gdppc_mpd_log_z","ins_party"),
+                      labels=c("dem_electoral","gdppc_mpd_log_z","ins_party"),
+                      name = " ") +
+  geom_vline(aes(xintercept="1966"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2001"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2004"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2014"),color = "#999999",linetype="dashed") +
+  annotate("text", x = "1952", y = .4, label = "Sukarno",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1986", y = .4, label = "Suharto",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2003", y = .4, label = "Megawati\nSukarnoputri",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2008", y = .4, label = "Bambang\nYudhoyono",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2018", y = .4, label = "Joko\nWidodo",
+             color="#000000",size = 3,fontface="bold" ) +
+  theme(legend.position = "right") +
+  xlab("Year") +
+  ylab("Leader's Index") +
+  theme(legend.justification = c(0,1),
+        legend.position = c(0,1),
+        legend.key.size = unit(10,"pt"),
+        panel.grid.major=element_line(colour=NA),
+        panel.background = element_rect(fill = "transparent",colour = NA),
+        plot.background = element_rect(fill = "transparent",colour = NA),
+        panel.grid.minor = element_blank())
+
+plot_ind
+
+ggsave(plot_ind,file = "../fig/plot_ind.pdf",width = 8)
+
+
+### Brazil
+
+df_bra <- fulldata %>%
+  filter(.,ccode == "140") %>%
+  filter(leader %in% c("Dutra","Vargas","Kubitschek","Goulart","Castello Branco","Medici","Geisel","Figueiredo","Sarnay","Franco Itamar","Cardoso","	
+Lula da Silva","Rousseff","Temer","Bolsonaro")) %>%
+  select(.,year,leader,startdate,dem_electoral,gdppc_mpd_log_z,ins_party) %>%
+mutate(startdate = case_when(
+  leader == "Dutra" ~ "1946/1/31",
+  leader == "Vargas" ~ "1951/2/10",
+  leader == "Kubitschek" ~ "1956/1/31",
+  leader == "Goulart" ~ "1961/9/7",
+  leader == "Castello Branco" ~ "1964/4/15",
+  leader == "Medici" ~ "1969/10/25",
+  leader == "Geisel" ~ "1974/3/15",
+  leader == "Figueiredo" ~ "1979/3/15",
+  leader == "Sarnay" ~ "1985/3/21",
+  leader == "Franco Itamar" ~ "1992/10/2",
+  leader == "Cardoso" ~ "1995/1/1",
+  leader == "Lula da Silva" ~ "2003/1/1",
+  leader == "Rousseff" ~ "2011/1/1",
+  leader == "Temer" ~ "2016/1/1",
+  leader == "Bolsonaro" ~ "2019/1/1"))
+
+plot_bra <- df_bra %>%
+  ggplot() +
+  geom_line(aes(x=year, y=dem_electoral,group = 1,color = "dem_electoral")) +
+  geom_line(aes(x=year, y=gdppc_mpd_log_z,group = 1,color = "gdppc_mpd_log_z")) +
+  geom_line(aes(x=year, y=ins_party,group = 1,color = "ins_party")) +
+  scale_x_discrete(breaks = seq(1945,2020,5)) +
+  scale_colour_manual(values = c("#000000","#CCCCCC","#996600"),
+                      breaks = c("dem_electoral","gdppc_mpd_log_z","ins_party"),
+                      labels=c("dem_electoral","gdppc_mpd_log_z","ins_party"),
+                      name = " ") +
+  geom_vline(aes(xintercept="1951"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1956"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1961"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1964"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1969"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1974"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1979"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1985"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1992"),color = "#000000",linetype="dashed") +
+  geom_vline(aes(xintercept="1995"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2003"),color = "#000000",linetype="dashed") +
+  geom_vline(aes(xintercept="2011"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2016"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2019"),color = "#999999",linetype="dashed") +
+  annotate("text", x = "1949", y = .6, label = "Dutra",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1952", y = .6, label = "Vargas",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1959", y = .6, label = "Kubitschek",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1962", y = .6, label = "Goulart",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1965", y = .25, label = "Castello\nBranco",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1971", y = .25, label = "Medici",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1976", y = .4, label = "Geisel",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1982", y = .4, label = "Figueiredo",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1987", y = .4, label = "Sarnay",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1993", y = .4, label = "Franco\nItamar",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "1997", y = .4, label = "Cardoso",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2005", y = .4, label = "Lula da\nSilva",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2013", y = .4, label = "Rousseff",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2017", y = .4, label = "Temer",
+             color="#000000",size = 3,fontface="bold" ) +
+  annotate("text", x = "2020", y = .4, label = "Bols-\nonaro",
+             color="#000000",size = 3,fontface="bold" ) +
+  theme(legend.position = "right") +
+  xlab("Year") +
+  ylab("Leader's Index") +
+  theme(legend.justification = c(0,1),
+        legend.position = c(0,1),
+        legend.key.size = unit(10,"pt"),
+        panel.grid.major=element_line(colour=NA),
+        panel.background = element_rect(fill = "transparent",colour = NA),
+        plot.background = element_rect(fill = "transparent",colour = NA),
+        panel.grid.minor = element_blank())
+
+plot_bra
+
+ggsave(plot_bra,file = "../fig/plot_bra.pdf",width = 8)
+
+## Chile
+
+df_chl <- fulldata %>%
+  filter(.,ccode == "155") %>%
+  filter(leader %in% c("Gonzalez Videla","Ibanez Campo","Alessandri Rodriguez","Frei Montalva","Allende","Pinochet","Aylwin","Frei Ruiz-Tagle","Ricardo Lagos Escobar","Michelle Bachelet","Sebastian Piñera","	Michelle Bachelet","Sebastian Pinera")) %>%
+  select(.,year,leader,startdate,dem_electoral,gdppc_mpd_log_z,ins_party) %>%
+mutate(startdate = case_when(
+  leader == "Gonzalez Videla" ~ "1946/11/3",
+  leader == "Ibanez Campo" ~ "1952/11/3",
+  leader == "Alessandri Rodriguez" ~ "1958/11/3",
+  leader == "Frei Montalva" ~ "1964/11/3",
+  leader == "Allende" ~ "1970/11/4",
+  leader == "Pinochet" ~ "1973/9/11",
+  leader == "Aylwin" ~ "1990/3/11",
+  leader == "Frei Ruiz-Tagle" ~ "1994/3/11",
+  leader == "Ricardo Lagos Escobar" ~ "2000/3/12",
+  leader == "Michelle Bachelet" ~ "2006/3/11",
+  leader == "Sebastian Piñera" ~ "2010/3/11",
+  leader == "Michelle Bachelet" ~ "2014/3/11",
+  leader == "Sebastian Pinera" ~ "2018/3/11"))
+
+plot_chl <- df_chl %>%
+  ggplot() +
+  geom_line(aes(x=year, y=dem_electoral,group = 1,color = "dem_electoral")) +
+  geom_line(aes(x=year, y=gdppc_mpd_log_z,group = 1,color = "gdppc_mpd_log_z")) +
+  geom_line(aes(x=year, y=ins_party,group = 1,color = "ins_party")) +
+  scale_x_discrete(breaks = seq(1945,2020,5)) +
+  scale_colour_manual(values = c("#000000","#CCCCCC","#999999"),
+                      breaks = c("dem_electoral","gdppc_mpd_log_z","ins_party"),
+                      labels=c("Electoral democracy","GDP per capita","Party institutionalization"),
+                      name = " ") +
+  geom_vline(aes(xintercept="1952"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1958"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1964"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1970"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1973"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1990"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="1994"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2000"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2006"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2010"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2014"),color = "#999999",linetype="dashed") +
+  geom_vline(aes(xintercept="2018"),color = "#999999",linetype="dashed") +
+  annotate("text", x = "1949", y = .25, label = "Videla",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1955", y = .25, label = "Campo",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1961", y = .25, label = "Rodriguez",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1966", y = .25, label = "Montalva",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1972", y = .25, label = "Allende",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1982", y = .25, label = "Pinochet",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1992", y = .25, label = "Aylwin",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "1998", y = .25, label = "Tagle",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "2003", y = .25, label = "Escobar",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "2008", y = .25, label = "Bachelet",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "2012", y = .25, label = "Pinera",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "2016", y = .25, label = "Bach-\nelet",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  annotate("text", x = "2019", y = .25, label = "Pinera",
+             color="#000000",size = 1.3,fontface="bold" ) +
+  xlab("Year") +
+  ylab("Normalized Indicators") +
+  labs(title="Chile") +
+  scale_y_continuous(limits=c(0,1)) +
+  theme(legend.justification = c(0,1),
+        legend.position = c(0,1),
+        legend.key.size = unit(6,"pt"),
+        legend.text=element_text(size=4),
+        axis.text = element_text(size = 6,angle = 45),
+        panel.grid.major = element_line(colour=NA),
+        panel.background = element_rect(fill = "transparent",colour = NA),
+        plot.background = element_rect(fill = "transparent",colour = "#999999",linewidth = 0.5),
+        panel.grid.minor = element_blank())
+
+plot_chl
+
+ggsave(plot_chl,file = "../fig/plot_chl.pdf",width = 10)
+
+## 
+plot_full <- ggarrange(plot_saf,plot_rus,plot_taw,plot_chl,
+                       ncol = 2, nrow = 2)
+ggsave(plot_full,file = "../fig/plot_full.pdf",width = 10)
 ```
 
 # replicaition
@@ -481,6 +1306,7 @@ worldleaders <- fulldata %>%
 ```
 
 # Endogenous test
+
 ```{r}
 fulldata_auth$diff_electoral_rate <- fulldata_auth$diff_electoral/ fulldata_auth$dem_electoral_lag5
 fulldata_auth$diff_electoral_rateN <- fulldata_auth$diff_electoral_rateN / fulldata_auth$dem_electoral_lag5
