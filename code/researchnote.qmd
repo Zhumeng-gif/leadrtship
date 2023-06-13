@@ -54,6 +54,16 @@ ide <- read.csv("../data/Global_Leader_Ideologies_22_10_28/global_leader_ideolog
   complete(.,ccode,year)
 ide$year <- as.factor(ide$year)
 
+cate <- readxl::read_xlsx("../data/category.xlsx") %>%
+  rename(countryname = country)
+cate$ccode <- countrycode(cate$countryname,
+                                origin = "country.name",
+                                destination = "cown",
+                                 custom_match = c(
+                                   "Sudan-South"= "626"))
+cate$year <- as.factor(cate$year)
+cate$ccode <- as.integer(cate$ccode)
+
 ```
 
 ## data_vdem/ert
@@ -95,9 +105,10 @@ ert$dem_sucr <- Recode(ert$dem_suc,"c(1,3) = 1; 2 = 0; c(0,4) = NA")
 ert$year <- as.factor(ert$year)
 
 # ov and iv combine
-maindata <- ide %>%
+maindata <- cate %>%
+  left_join(.,ide, by = c("ccode","year","leader")) %>%
   left_join(.,arc,by = c("ccode","year","leader")) %>%
-  left_join(.,vdem,by = c("ccode","year")) %>%
+  left_join(.,vdem,by = c("ccode","year","countryname")) %>%
   left_join(.,ert,by = c("countryname","countrycode","year")) %>%
   select(.,-c(countryname,countrycode))
 
@@ -123,6 +134,7 @@ maindata$countrycode <- countrycode(maindata$ccode,
                                      "680" = "YMD",
                                      "817" = "VDR",
                                      "711" = "TBT"))
+
 ```
 
 ## data_cv
@@ -157,7 +169,6 @@ regime <- regime %>%
      type %in% c('military','military-personal','indirect military') ~ 3,
      type %in% c('monarchy') ~ 4
    ))
-
 # GDP data
 ## maddison data
 mpd <- readxl::read_xlsx("../data/mpd2020.xlsx",sheet = 3) %>%
@@ -256,23 +267,6 @@ inflation <- readRDS("../data/inflation.rds") %>%
           countrycode = iso3c)
 inflation$year <- as.factor(inflation$year)
 
-
-# wvs
-#load("/Users/zhumeng/Documents/GitHub/democracy-backslide/data/WVST.rdata")
-#wvs <- WVS_TimeSeries_1981_2022_spss_v3_0 %>%
-#  select(.,COUNTRY_ALPHA,COW_NUM,S002VS,S020,Y020) %>%
-#  rename(ccode = COW_NUM,
-#         countrycode = COUNTRY_ALPHA,
-#         year = S020,
-#         wave = S002VS,
-#         epative = Y020)
-#wvs$year <- as.factor(wvs$year)
-#wvs <- wvs %>%
-#  left_join(.,vdem[,c("ccode","countrycode","year","regionpol")],by = c("countrycode","ccode", "year")) %>%
-#  group_by(regionpol,year) %>%
-#  summarise(epative_mean = Mean(epative,na.rm = TRUE))
-#rm(WVS_TimeSeries_1981_2022_spss_v3_0)
-
 ```
 
 # dataCombine
@@ -293,6 +287,8 @@ fulldata <- maindata %>%
   select(.,-c(`countryname.y`)) %>%
   rename(countryname = "countryname.x") %>%
   left_join(.,swiid_summary,by = c("countrycode","year","countryname")) 
+
+
 
 fulldata[fulldata < 0 ] <- NA
 fulldata <- fulldata %>%
@@ -318,8 +314,9 @@ fulldata$rgdppna_log_z = scales::rescale(fulldata$rgdppna_log,to = c(0,1))
 
 fulldata$gdppc_mpd_log_z = scales::rescale(fulldata$gdppc_mpd_log,to = c(0,1))
 
+
 fulldata <- fulldata %>%
-  select(ccode,countrycode,countryname,year,leader,gender,yrborn,yrdied,age,startdate,enddate,leader_position,leader_ideology,leader_ideology_num_redux,leader_party_eng,leader_party_abbr,entry,exit,exitcode,parliamentary,yrsoffc,finittrm,execrlc,execnat,termlimit,dem_electoral,dem_electoral_lag5,dem_electoral_lag1,dem_liberal,dem_liberal_lag,dem_on,dem_suc,dem_sucr,ins_party,leg_ideol,leg_leader,leg_perfermance,leg_legal,mob_mass,mob_demo,mob_auto,pol_society,pol_political,lib_civil,cap_territory,cap_fiscal,type,regimeType,rgdpna,gdppc_mpd_log,gdppc_mpd_log_z,pop_pwt,rgdppna,rgdppna_lag,rgdppna_log_z,gdppg,gdppg_lag,gdpp,gdpp_lag,gapp_lag_log,pop,popl,infla_deflator,infla_deflator_lag,consumerPrices,consumerPrices_lag,inflation,inflation_lag,gini_tax,gini_mkt,gini_tax_lag,gini_mkt_lag,oil,regionpol,region) %>%
+  select(ccode,countrycode,countryname,year,leader,gender,yrborn,yrdied,age,startdate,enddate,leader_position,leader_ideology,leader_ideology_num_redux,leader_party_eng,leader_party_abbr,entry,exit,exitcode,parliamentary,yrsoffc,finittrm,execrlc,execnat,termlimit,dem_electoral,AUTcases,DEMcases,dem_electoral_lag5,dem_electoral_lag1,dem_liberal,dem_liberal_lag,dem_on,dem_suc,dem_sucr,ins_party,leg_ideol,leg_leader,leg_perfermance,leg_legal,mob_mass,mob_demo,mob_auto,pol_society,pol_political,lib_civil,cap_territory,cap_fiscal,type,regimeType,rgdpna,gdppc_mpd_log,gdppc_mpd_log_z,pop_pwt,rgdppna,rgdppna_lag,rgdppna_log_z,gdppg,gdppg_lag,gdpp,gdpp_lag,gapp_lag_log,pop,popl,infla_deflator,infla_deflator_lag,consumerPrices,consumerPrices_lag,inflation,inflation_lag,gini_tax,gini_mkt,gini_tax_lag,gini_mkt_lag,oil,regionpol,region) %>%
   filter(.,!(ccode %in% c("711","31","80","835")))
 
 #rm(oil,gdpp,gdppg,infla_consumerPrices,infla_deflator,inflation,population,pwt,prsd,regime,swiid_summary,swiid)
@@ -409,10 +406,9 @@ fulldata$diff_electoral_na[fulldata$diff_electoral_na >= 0] <- NA
 fulldata$diff_electoral_po <- fulldata$diff_electoral_po - fulldata$score_yearm
 fulldata$diff_electoral_na <- fulldata$diff_electoral_na - fulldata$score_yearm
 
+#1write.csv(fulldata,file = "../data/fulldata.csv",row.names = FALSE)
 
-#write.csv(fulldata,file = "../data/fulldata.csv",row.names = FALSE)
-#fulldata <- fulldata %>%
-#  filter(.,leader != "Truman")
+
 fulldata_year <- fulldata %>%
   group_by(countrycode,leader) %>%
   summarize(year_offs = year_off) %>%
@@ -476,9 +472,6 @@ write_dta(worldleaders, "../replication/worldleaders.dta")
 ## case selection 2
 
 ```{r case selecetion}
-temp <- fulldata_auta %>%
-  select(.,countrycode,year,leader,dem_electoral,auth,autha)
-
 fulldata_auta <- fulldata_auth %>%
   group_by(leader,first_start) %>%
   mutate(autha = if_else(first(dem_electoral < 0.1),1,0)) %>%
@@ -505,6 +498,7 @@ fulldata_auth <- fulldata_auth %>%
   distinct()
 
 ```
+
 
 # plot_country
 
@@ -536,17 +530,17 @@ plot_rus <- df_rus %>%
   geom_vline(aes(xintercept="1991"),color = "#999999",linetype="dashed") +
   geom_vline(aes(xintercept="2000"),color = "#999999",linetype="dashed") +
   annotate("text", x = "1948", y = .23, label = "Stalin",
-             color="#000000",size = 1.3,fontface="bold" ) +
+             color="#000000",size = 2,fontface="bold" ) +
   annotate("text", x = "1958", y = .23, label = "Khrushchev",
-             color="#000000",size = 1.3,fontface="bold" ) +
+             color="#000000",size = 2,fontface="bold" ) +
   annotate("text", x = "1973", y = .23, label = "Brezhnev",
-             color="#000000",size = 1.3,fontface="bold" ) +
+             color="#000000",size = 2,fontface="bold" ) +
   annotate("text", x = "1988", y = .25, label = "Gorbanchev",
-             color="#000000",size = 1.3,fontface="bold" ) +
+             color="#000000",size = 2,fontface="bold" ) +
   annotate("text", x = "1996", y = .23, label = "Yeltsin",
-             color="#000000",size = 1.3,fontface="bold" ) +
+             color="#000000",size = 2,fontface="bold" ) +
   annotate("text", x = "2010", y = .23, label = "Putin",
-             color="#000000",size = 1.3,fontface="bold" ) +
+             color="#000000",size = 2,fontface="bold" ) +
   theme(legend.position = "right") +
   xlab("Year") +
   ylab("Normalized Indicators") +
@@ -797,23 +791,23 @@ plot_taw <- df_taw %>%
   geom_vline(aes(xintercept="2008"),color = "#999999",linetype="dashed") +
   geom_vline(aes(xintercept="2016"),color = "#999999",linetype="dashed") +
   annotate("text", x = "1960", y = .2, label = "Chiang Kai-shek",
-             color="#000000",size = 1.3,fontface="bold" ) +
+             color="#000000",size = 2,fontface="bold" ) +
   annotate("text", x = "1976", y = .2, label = "Yen",
-             color="#000000",size = 1.3,fontface="bold" ) +
+             color="#000000",size = 2,fontface="bold" ) +
   annotate("text", x = "1982", y = .2, label = "Chiang\nChing-Kuo",
-             color="#000000",size = 1.3,fontface="bold" ) +
+             color="#000000",size = 2,fontface="bold" ) +
   annotate("text", x = "1995", y = .2, label = "Lee",
-             color="#000000",size = 1.3,fontface="bold" ) +
+             color="#000000",size = 2,fontface="bold" ) +
   annotate("text", x = "2004", y = .2, label = "Chen",
-             color="#000000",size = 1.3,fontface="bold" ) +
+             color="#000000",size = 2,fontface="bold" ) +
   annotate("text", x = "2012", y = .2, label = "Ma",
-             color="#000000",size = 1.3,fontface="bold" ) +
+             color="#000000",size = 2,fontface="bold" ) +
   annotate("text", x = "2018", y = .2, label = "Tsai",
-             color="#000000",size = 1.3,fontface="bold" ) +
+             color="#000000",size = 2,fontface="bold" ) +
   theme(legend.position = "right") +
   xlab("Year") +
   ylab("Normalized Indicators") +
-  labs(title="TaiWan") +
+  labs(title="Taiwan") +
   scale_y_continuous(limits=c(0,1)) +
   theme(legend.justification = c(0,1),
         legend.position = c(0,1),
@@ -1274,8 +1268,8 @@ plot_chl
 ggsave(plot_chl,file = "../fig/plot_chl.pdf",width = 10)
 
 ## 
-plot_full <- ggarrange(plot_saf,plot_rus,plot_taw,plot_chl,
-                       ncol = 2, nrow = 2)
+plot_full <- ggarrange(plot_taw,plot_rus,
+                       ncol = 1, nrow = 2)
 ggsave(plot_full,file = "../fig/plot_full.pdf",width = 10)
 ```
 
@@ -1305,6 +1299,7 @@ worldleaders <- fulldata %>%
 
 ```
 
+
 # Endogenous test
 
 ```{r}
@@ -1328,4 +1323,44 @@ msummary(list(lm_ctr,lm_iv_po,lm_iv_na),
          coef_omit = "as.factor*",
          output="../outputs/regression.docx",
          stars = TRUE)
+```
+
+
+
+# Other test
+```{r test}
+# group 1
+eco_good <- fulldata_auth %>%
+  filter(.,gdppc_mpd_log >= median(gdppc_mpd_log,na.rm = TRUE))
+eco_bad <- fulldata_auth %>%
+  filter(.,gdppc_mpd_log < median(gdppc_mpd_log,na.rm = TRUE))
+
+# group 2
+euq_good <- fulldata_auth %>%
+  filter(.,gini_tax >= median(gini_tax,na.rm = TRUE)) 
+euq_bad <- fulldata_auth %>%
+  filter(.,gini_tax < median(gini_tax,na.rm = TRUE))
+
+# group 3
+regime_monarchy <- fulldata_auth %>%
+  filter(.,regimeType == 4)
+regime_party <- fulldata_auth %>%
+  filter(.,regimeType == 1)
+regime_personal <- fulldata_auth %>%
+  filter(.,regimeType == 2)
+regime_military <- fulldata_auth %>%
+  filter(.,regimeType == 3)
+
+
+
+worldleaders <- regime_military %>%
+  select(.,countrycode,year,leader,diff_year,auth) %>%
+  rename(unit = countrycode,
+         time = year,
+         growth = diff_year) %>%
+  unique() 
+
+write_dta(worldleaders, "../replication/worldleaders.dta")
+  
+
 ```
